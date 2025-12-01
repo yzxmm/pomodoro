@@ -1,0 +1,32 @@
+# Build outputs
+build/
+dist/
+
+# Python
+__pycache__/
+*.py[cod]
+
+# Virtual envs
+.venv/
+venv/
+env/
+
+# Logs
+*.log
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+Thumbs.db
+desktop.ini
+
+# Local config
+.env
+
+# JJ metadata
+.jj/
+
+# Misc binaries
+rustup-init.exe
