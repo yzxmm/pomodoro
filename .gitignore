@@ -3,7 +3,7 @@ build/
 dist/
 
 # Python
-__pycache__/
+__pycache__/**
 *.py[cod]
 
 # Virtual envs
@@ -30,3 +30,7 @@ desktop.ini
 
 # Misc binaries
 rustup-init.exe
+__pycache__
+*.pyc
+.python-version
+uv.lock
