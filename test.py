@@ -651,7 +651,59 @@ class PomodoroWidget(QtWidgets.QWidget):
                 self.play_random_voice()
 
 
+def check_resources():
+    root = base_dir()
+    parent = os.path.dirname(root)
+    def has_any(local, parent_path):
+        return os.path.exists(local) or os.path.exists(parent_path)
+    def audio_count(dir_path):
+        if not os.path.exists(dir_path):
+            return 0
+        c = 0
+        for fn in os.listdir(dir_path):
+            if fn.lower().endswith(('.mp3', '.wav', '.ogg')):
+                c += 1
+        return c
+    print("资源检查")
+    imgs = [
+        ("idle.png", asset_path("idle.png"), os.path.join(parent, "assets", "idle.png")),
+        ("paused.png", asset_path("paused.png"), os.path.join(parent, "assets", "paused.png")),
+    ]
+    for name, l, p in imgs:
+        print(f"图片 {name}: {'OK' if has_any(l, p) else '缺失'}")
+    opt_img = ("resume.png", asset_path("resume.png"), os.path.join(parent, "assets", "resume.png"))
+    print(f"图片 {opt_img[0]}(可选): {'OK' if has_any(opt_img[1], opt_img[2]) else '缺失'}")
+    digits_local = os.path.join(root, "assets", "digits")
+    digits_parent = os.path.join(parent, "assets", "digits")
+    ddir = digits_local if os.path.exists(digits_local) else digits_parent
+    d_ok = os.path.exists(os.path.join(ddir, "0.png")) and os.path.exists(os.path.join(ddir, "colon.png"))
+    print(f"手写数字(可选): {'OK' if d_ok else '缺失'}")
+    sounds = [
+        ("start.mp3", sound_path("start.mp3"), os.path.join(parent, "sounds", "start.mp3")),
+        ("end.mp3", sound_path("end.mp3"), os.path.join(parent, "sounds", "end.mp3")),
+        ("rest_start.mp3", sound_path("rest_start.mp3"), os.path.join(parent, "sounds", "rest_start.mp3")),
+    ]
+    for name, l, p in sounds:
+        print(f"音频 {name}: {'OK' if has_any(l, p) else '缺失'}")
+    cats = ["start", "end", "ten", "resume"]
+    for cat in cats:
+        c_local = audio_count(os.path.join(root, "sounds", "random", cat))
+        c_parent = audio_count(os.path.join(parent, "sounds", "random", cat))
+        print(f"分类池 {cat}: {c_local + c_parent} 个文件")
+    cloud_total = 0
+    cloud_root = os.path.join(root, "sounds", "cloud")
+    if os.path.exists(cloud_root):
+        for base, _, files in os.walk(cloud_root):
+            for fn in files:
+                if fn.lower().endswith(('.mp3', '.wav', '.ogg')):
+                    cloud_total += 1
+    print(f"云端池: {cloud_total} 个文件")
+
+
 def main():
+    if "--check-resources" in sys.argv:
+        check_resources()
+        return
     app = QtWidgets.QApplication(sys.argv)
     w = PomodoroWidget()
     w.show()

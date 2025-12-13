@@ -31,20 +31,20 @@ class ImageMenu(QtWidgets.QFrame):
         bottom.setSpacing(8)
 
         self.btn_pause = QtWidgets.QPushButton("暂停", self)
-        self.btn_pause.clicked.connect(lambda: (self.owner.pause_timer(), self.hide()))
+        self.btn_pause.clicked.connect(lambda: (self.owner.pause_timer(), self.close()))
 
         self.btn_top = QtWidgets.QPushButton("置顶", self)
-        self.btn_top.clicked.connect(lambda: (self.owner.toggle_always_on_top(), self.refresh_controls(), self.hide()))
+        self.btn_top.clicked.connect(lambda: (self.owner.toggle_always_on_top(), self.refresh_controls(), self.close()))
 
         self.btn_exit = QtWidgets.QPushButton("退出", self)
-        self.btn_exit.clicked.connect(lambda: (QtWidgets.QApplication.quit(), self.hide()))
+        self.btn_exit.clicked.connect(lambda: (QtWidgets.QApplication.quit(), self.close()))
 
         top.addWidget(self.btn_pause)
         top.addWidget(self.btn_top)
         top.addWidget(self.btn_exit)
 
         self.btn_interval = QtWidgets.QPushButton(self.owner.voice_interval_label_text(), self)
-        self.btn_interval.clicked.connect(lambda: (self.owner.cycle_voice_interval(), self.refresh_controls(), self.hide()))
+        self.btn_interval.clicked.connect(lambda: (self.owner.cycle_voice_interval(), self.refresh_controls()))
         bottom.addWidget(self.btn_interval)
 
         root.addLayout(top)
