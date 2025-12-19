@@ -9,6 +9,9 @@ from PySide6 import QtCore, QtGui, QtWidgets
 from image_menu import ImageMenu
 from PySide6.QtMultimedia import QMediaPlayer, QAudioOutput
 
+# Set this to False to disable layout editing features (drag/resize time label)
+LAYOUT_EDIT_MODE = True
+
 
 def base_dir():
     return os.path.dirname(os.path.abspath(__file__))
@@ -59,6 +62,16 @@ class PomodoroWidget(QtWidgets.QWidget):
         font.setBold(True)
         self.time_label.setFont(font)
         self.time_label.setStyleSheet("color: black;")
+        
+        # Layout config
+        self.layout_config = {
+            "time_x": 0.3,  # center
+            "time_y": 0.61,
+            "time_w": 0.39,
+            "time_h": 0.11,
+            "font_size": 22
+        }
+        
         self.place_time_label()
 
         self.work_duration = 40 * 60
@@ -96,13 +109,15 @@ class PomodoroWidget(QtWidgets.QWidget):
         self.build_sound_pool()
         self.update_sounds_async()
 
+        self.load_settings()
+
         self.time_label.installEventFilter(self)
 
         self.dragging = False
         self.drag_offset = QtCore.QPoint()
         # digit image container for hand-written PNG digits (optional)
         self.digit_container = QtWidgets.QWidget(self)
-        self.digit_container.setAttribute(QtCore.Qt.WA_TransparentForMouseEvents, True)
+        # self.digit_container.setAttribute(QtCore.Qt.WA_TransparentForMouseEvents, True)
         self.digit_layout = QtWidgets.QHBoxLayout(self.digit_container)
         self.digit_layout.setContentsMargins(0, 0, 0, 0)
         self.digit_layout.setSpacing(0)
@@ -112,6 +127,11 @@ class PomodoroWidget(QtWidgets.QWidget):
             lbl.setScaledContents(False)
             self.digit_layout.addWidget(lbl)
         self.digit_container.hide()
+        
+        # Install event filter on digit_container and its children to allow dragging
+        self.digit_container.installEventFilter(self)
+        for lbl in self.digit_labels:
+            lbl.installEventFilter(self)
 
         # 确保初始几何同步
         self.place_time_label()
@@ -142,16 +162,72 @@ class PomodoroWidget(QtWidgets.QWidget):
     def place_time_label(self):
         w = self.width()
         h = self.height()
-        label_w = int(w * 0.39)
-        label_h = int(h * 0.11)
-        cx = int(w / 2 - w * 0.01)
-        x = int(cx - label_w / 2)
-        y = int(h * 0.61)
-        # 手写数字PNG的显示区域，和原文字大小一致，便于调整位置
-        # 位置：相对图片宽高，X=居中，Y=约图片高度的60%
+        
+        # Use config if available, fallback to defaults
+        cfg = getattr(self, 'layout_config', {})
+        rel_x = cfg.get("time_x", 0.3)
+        rel_y = cfg.get("time_y", 0.61)
+        rel_w = cfg.get("time_w", 0.39)
+        rel_h = cfg.get("time_h", 0.11)
+        
+        # Validate coordinates (prevent out of screen)
+        if rel_x < 0 or rel_x > 1 or rel_y < 0 or rel_y > 1:
+            rel_x = 0.3
+            rel_y = 0.61
+            rel_w = 0.39
+            rel_h = 0.11
+            # Update config with safe values
+            self.layout_config['time_x'] = rel_x
+            self.layout_config['time_y'] = rel_y
+            self.layout_config['time_w'] = rel_w
+            self.layout_config['time_h'] = rel_h
+        
+        x = int(w * rel_x)
+        y = int(h * rel_y)
+        label_w = int(w * rel_w)
+        label_h = int(h * rel_h)
+        
         self.time_label.setGeometry(x, y, label_w, label_h)
+        
+        # Update font size if needed
+        f_size = cfg.get("font_size", 22)
+        font = self.time_label.font()
+        if font.pointSize() != f_size:
+            font.setPointSize(f_size)
+            self.time_label.setFont(font)
+        
+        # Auto-expand label width/height if text might clip, but respect layout config if it was manually set?
+        # Actually, let's just make sure the label is large enough to contain the text
+        if LAYOUT_EDIT_MODE:
+            self.time_label.adjustSize()
+            # Update w/h in config to match the new size relative to window
+            # But wait, adjustSize() might make it smaller if text is short (e.g. 00:00)
+            # We want to keep the box reasonably sized.
+            # Let's just update the geometry to be at least the calculated size, or use adjustSize logic
+            
+            # If we just resized font, the adjustSize will calculate needed rect
+            curr_geo = self.time_label.geometry()
+            # Update stored relative width/height so it persists
+            self.layout_config['time_w'] = curr_geo.width() / w
+            self.layout_config['time_h'] = curr_geo.height() / h
+        else:
+            # If edit mode is disabled, we must ensure the label is visible and large enough
+            # We trust the stored relative coordinates, but maybe force adjustSize for content?
+            # If we don't adjustSize, and font is large, it might clip.
+            # So let's force adjustSize to ensure visibility, then center it at the configured position?
+            # Or just rely on the stored geometry.
+            # If the user messed up the geometry in edit mode (e.g. made it 0x0), it would be hidden.
+            # Safety check:
+            if label_w < 10 or label_h < 10:
+                self.time_label.adjustSize()
+                new_geo = self.time_label.geometry()
+                self.time_label.setGeometry(x, y, new_geo.width(), new_geo.height())
+            
         if hasattr(self, 'digit_container') and self.digit_container is not None:
-            self.digit_container.setGeometry(x, y, label_w, label_h)
+            self.digit_container.setGeometry(self.time_label.geometry())
+            # Re-render digits if they are active to match new size
+            if self.digits_available() and self.time_label.text():
+                self.show_digit_time(self.time_label.text())
 
     def place_resume_button(self):
         w = self.width()
@@ -174,10 +250,28 @@ class PomodoroWidget(QtWidgets.QWidget):
 
     def resizeEvent(self, event):
         self.image_label.setGeometry(0, 0, self.width(), self.height())
+        # Ensure time label is placed correctly on resize
         self.place_time_label()
         self.place_resume_button()
         self.place_start_button()
         super().resizeEvent(event)
+
+    def wheelEvent(self, event):
+        if LAYOUT_EDIT_MODE and (event.modifiers() & QtCore.Qt.ControlModifier):
+            delta = event.angleDelta().y()
+            current_size = self.layout_config.get('font_size', 22)
+            if delta > 0:
+                new_size = min(120, current_size + 2)
+            else:
+                new_size = max(8, current_size - 2)
+            
+            if new_size != current_size:
+                self.layout_config['font_size'] = new_size
+                self.place_time_label()
+                self.save_settings()
+            event.accept()
+        else:
+            super().wheelEvent(event)
 
     def format_time(self, seconds):
         m = seconds // 60
@@ -200,11 +294,15 @@ class PomodoroWidget(QtWidgets.QWidget):
 
     def set_time_text(self, text):
         if self.digits_available():
-            self.time_label.setText("")
+            # Keep text for size calculation but hide label
+            self.time_label.setText(text)
+            self.time_label.hide()
             self.show_digit_time(text)
         else:
             self.digit_container.hide()
+            self.time_label.show()
             self.time_label.setText(text)
+            self.time_label.adjustSize()
 
     def show_digit_time(self, text):
         chars = [text[0], text[1], ":", text[3], text[4]]
@@ -213,28 +311,65 @@ class PomodoroWidget(QtWidgets.QWidget):
             p = self.digit_path(ch)
             pm = QtGui.QPixmap(p)
             pixmaps.append(pm if not pm.isNull() else QtGui.QPixmap())
-        height = max(1, self.digit_container.height())
+        
+        # Calculate optimal height to fit both width and height of the container
+        container_w = max(1, self.digit_container.width())
+        container_h = max(1, self.digit_container.height())
+        
+        # 1. Try scaling to full height first
+        temp_height = container_h
+        total_w_at_full_height = 0
+        for pm in pixmaps:
+            if not pm.isNull():
+                # w = pm.width() * (temp_height / pm.height())
+                total_w_at_full_height += pm.width() * (temp_height / max(1, pm.height()))
+            else:
+                total_w_at_full_height += temp_height * 0.5 # assume aspect ratio 0.5 for missing
+        
+        # Add padding estimate (approx 6% of height per digit)
+        # Fix truncation: increase padding slightly or ensure container is wide enough
+        # The container width is fixed by geometry. If digits + padding > container width, we scale down.
+        # But if padding calculation is too aggressive, it might overflow visually?
+        # Actually, let's just make sure we use available width efficiently.
+        
+        # Reduce internal padding calculation to tighten spacing
+        pad_px = temp_height * 0.02
+        total_w_at_full_height += pad_px * 5
+        
+        # 2. If too wide, scale down height
+        # Ensure we have a tiny bit of margin so it doesn't touch edges exactly
+        safe_container_w = container_w * 0.95 # Increase safety margin to 5% to prevent right side cut
+        
+        if total_w_at_full_height > safe_container_w:
+            scale_factor = safe_container_w / total_w_at_full_height
+            final_height = int(temp_height * scale_factor)
+        else:
+            final_height = temp_height
+            
+        final_height = max(1, final_height)
+        
         scaled = []
         for pm in pixmaps:
             if pm.isNull():
                 scaled.append(QtGui.QPixmap())
             else:
-                scaled.append(pm.scaledToHeight(height, QtCore.Qt.SmoothTransformation))
+                scaled.append(pm.scaledToHeight(final_height, QtCore.Qt.SmoothTransformation))
+                
         for i, spm in enumerate(scaled):
             self.digit_labels[i].setPixmap(spm)
-        natural_widths = [spm.width() if not spm.isNull() else 1 for spm in scaled]
-        total_w = max(1, self.digit_container.width())
-        pad_px = max(2, int(height * 0.06))
-        pads = [pad_px, pad_px, max(1, int(pad_px * 0.6)), pad_px, pad_px]
-        total_natural = sum(natural_widths[i] + pads[i] for i in range(5))
-        ratio = min(1.0, total_w / total_natural) * 0.98
-        for i, lbl in enumerate(self.digit_labels):
-            lbl.setFixedHeight(height)
-            w_i = int((natural_widths[i] + pads[i]) * ratio)
-            if i == 2:
-                w_i = max(w_i, max(8, int(height * 0.12)))
-            lbl.setFixedWidth(max(1, w_i))
+            self.digit_labels[i].setFixedHeight(final_height)
+            # Allow label to be its natural width
+            if not spm.isNull():
+                self.digit_labels[i].setFixedWidth(spm.width())
+            else:
+                self.digit_labels[i].setFixedWidth(max(1, int(final_height * 0.5)))
+                
+        # Tighten layout spacing
+        self.digit_layout.setSpacing(int(final_height * 0.02))
+        self.digit_layout.setContentsMargins(0, 0, 0, 0)
+        
         self.digit_container.show()
+        self.digit_container.raise_()
 
     def start_or_resume(self):
         if self.phase == "idle":
@@ -321,7 +456,34 @@ class PomodoroWidget(QtWidgets.QWidget):
             self.player.play()
 
     def eventFilter(self, obj, event):
-        if obj is self.time_label:
+        # Allow dragging from digit container or its labels
+        is_time_obj = (obj is self.time_label) or (obj is self.digit_container) or (obj in self.digit_labels)
+        
+        if is_time_obj and LAYOUT_EDIT_MODE:
+            # Control + Left Click to move the label
+            if event.type() == QtCore.QEvent.MouseButtonPress and event.button() == QtCore.Qt.LeftButton and (event.modifiers() & QtCore.Qt.ControlModifier):
+                self.label_dragging = True
+                self.label_drag_start = event.globalPosition().toPoint()
+                self.label_orig_pos = self.time_label.pos()
+                return True
+            
+            if event.type() == QtCore.QEvent.MouseMove and getattr(self, 'label_dragging', False):
+                delta = event.globalPosition().toPoint() - self.label_drag_start
+                new_pos = self.label_orig_pos + delta
+                
+                # Update config
+                w, h = self.width(), self.height()
+                self.layout_config['time_x'] = new_pos.x() / w
+                self.layout_config['time_y'] = new_pos.y() / h
+                self.place_time_label()
+                return True
+
+            if event.type() == QtCore.QEvent.MouseButtonRelease and getattr(self, 'label_dragging', False):
+                self.label_dragging = False
+                self.save_settings()
+                return True
+
+        if is_time_obj:
             if event.type() == QtCore.QEvent.MouseButtonPress and event.button() == QtCore.Qt.LeftButton:
                 self.adjusting_duration = True
                 self.adjust_mode = 'rest' if (event.modifiers() & QtCore.Qt.AltModifier) else 'work'
@@ -374,12 +536,64 @@ class PomodoroWidget(QtWidgets.QWidget):
                 if self.phase == "idle":
                     target = self.work_duration if (self.adjust_mode == 'work') else self.rest_duration
                     self.set_time_text(self.format_time(target))
+                    self.save_settings()
                 else:
                     self.set_time_text(self.format_time(self.elapsed))
                 self.adjust_mode = None
                 self.apply_phase_visuals()
                 return True
         return super().eventFilter(obj, event)
+
+    def closeEvent(self, event):
+        self.save_settings()
+        super().closeEvent(event)
+
+    def load_settings(self):
+        settings_path = os.path.join(base_dir(), "settings.json")
+        if not os.path.exists(settings_path):
+            return
+        try:
+            with open(settings_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                self.work_duration = data.get("work_duration", self.work_duration)
+                self.rest_duration = data.get("rest_duration", self.rest_duration)
+                self.always_on_top = data.get("always_on_top", self.always_on_top)
+                self.voice_interval_minutes = data.get("voice_interval_minutes", self.voice_interval_minutes)
+                self.exit_on_work_end = data.get("exit_on_work_end", self.exit_on_work_end)
+                self.setWindowFlag(QtCore.Qt.WindowStaysOnTopHint, self.always_on_top)
+                
+                # Restore layout config
+                layout_cfg = data.get("layout_config")
+                if layout_cfg:
+                    self.layout_config.update(layout_cfg)
+                    self.place_time_label()
+
+                # Restore window position
+                x = data.get("x")
+                y = data.get("y")
+                if x is not None and y is not None:
+                    self.move(x, y)
+                    
+        except Exception as e:
+            print(f"Failed to load settings: {e}")
+
+    def save_settings(self):
+        settings_path = os.path.join(base_dir(), "settings.json")
+        data = {
+            "work_duration": self.work_duration,
+            "rest_duration": self.rest_duration,
+            "always_on_top": self.always_on_top,
+            "voice_interval_minutes": self.voice_interval_minutes,
+                "exit_on_work_end": self.exit_on_work_end,
+                "layout_config": self.layout_config,
+                "x": self.x(),
+            "y": self.y()
+        }
+        try:
+            with open(settings_path, "w", encoding="utf-8") as f:
+                json.dump(data, f, indent=4)
+        except Exception as e:
+            print(f"Failed to save settings: {e}")
 
     def mousePressEvent(self, event):
         if event.button() == QtCore.Qt.LeftButton:
@@ -398,6 +612,7 @@ class PomodoroWidget(QtWidgets.QWidget):
     def mouseReleaseEvent(self, event):
         if event.button() == QtCore.Qt.LeftButton:
             self.dragging = False
+            self.save_settings()
             event.accept()
         super().mouseReleaseEvent(event)
 
@@ -435,6 +650,8 @@ class PomodoroWidget(QtWidgets.QWidget):
                 self.work_duration = 60 * 60
             if self.phase == "idle" or self.paused:
                 self.set_time_text(self.format_time(self.work_duration))
+        
+        self.save_settings()
 
     def contextMenuEvent(self, event: QtGui.QContextMenuEvent):
         self.menu_overlay.show_at(event.globalPos())
@@ -443,6 +660,7 @@ class PomodoroWidget(QtWidgets.QWidget):
         self.always_on_top = not self.always_on_top
         self.setWindowFlag(QtCore.Qt.WindowStaysOnTopHint, self.always_on_top)
         self.show()
+        self.save_settings()
 
     def play_random_voice(self):
         if not self.random_pool:
@@ -634,6 +852,7 @@ class PomodoroWidget(QtWidgets.QWidget):
         except ValueError:
             idx = 0
         self.voice_interval_minutes = seq[(idx + 1) % len(seq)]
+        self.save_settings()
 
     def voice_interval_label_text(self):
         m = int(self.voice_interval_minutes or 0)
