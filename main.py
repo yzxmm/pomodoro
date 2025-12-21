@@ -7,6 +7,7 @@ import threading
 import random
 from PySide6 import QtCore, QtGui, QtWidgets
 from image_menu import ImageMenu
+from download_manager import DownloadManager
 from PySide6.QtMultimedia import QMediaPlayer, QAudioOutput
 
 # Set this to False to disable layout editing features (drag/resize time label)
@@ -154,7 +155,15 @@ class PomodoroWidget(QtWidgets.QWidget):
         self.resume_offset_y_ratio = 0.08
 
         self.start_button = QtWidgets.QPushButton("开始", self)
-        self.start_button.setFixedSize(88, 34)
+        s_icon = resolve_asset("start_btn.png")
+        if os.path.exists(s_icon):
+            self.start_button.setText("")
+            self.start_button.setIcon(QtGui.QIcon(s_icon))
+            self.start_button.setIconSize(QtCore.QSize(40, 40))
+            self.start_button.setFixedSize(50, 50)
+            self.start_button.setStyleSheet("border: none; background: transparent;")
+        else:
+            self.start_button.setFixedSize(88, 34)
         self.start_button.clicked.connect(self.start_or_resume)
         self.start_button.show()
         self.place_start_button()
@@ -333,7 +342,7 @@ class PomodoroWidget(QtWidgets.QWidget):
         # Actually, let's just make sure we use available width efficiently.
         
         # Reduce internal padding calculation to tighten spacing
-        pad_px = temp_height * 0.02
+        pad_px = temp_height * -0.04
         total_w_at_full_height += pad_px * 5
         
         # 2. If too wide, scale down height
@@ -365,7 +374,7 @@ class PomodoroWidget(QtWidgets.QWidget):
                 self.digit_labels[i].setFixedWidth(max(1, int(final_height * 0.5)))
                 
         # Tighten layout spacing
-        self.digit_layout.setSpacing(int(final_height * 0.02))
+        self.digit_layout.setSpacing(int(final_height * -0.04))
         self.digit_layout.setContentsMargins(0, 0, 0, 0)
         
         self.digit_container.show()
@@ -924,8 +933,21 @@ def main():
         check_resources()
         return
     app = QtWidgets.QApplication(sys.argv)
-    w = PomodoroWidget()
-    w.show()
+    
+    # Check/Download resources
+    manager = DownloadManager(base_dir())
+    
+    # We need to keep a reference to the widget so it doesn't get garbage collected
+    widgets = []
+    
+    def start_app():
+        w = PomodoroWidget()
+        w.show()
+        widgets.append(w)
+        
+    manager.download_complete.connect(start_app)
+    manager.start()
+    
     sys.exit(app.exec())
 
 

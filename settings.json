@@ -5,11 +5,11 @@
     "voice_interval_minutes": 10,
     "exit_on_work_end": false,
     "layout_config": {
-        "time_x": 0.3275,
-        "time_y": 0.58,
-        "time_w": 0.3875,
-        "time_h": 0.18,
-        "font_size": 42
+        "time_x": 0.28,
+        "time_y": 0.545,
+        "time_w": 0.4625,
+        "time_h": 0.215,
+        "font_size": 50
     },
     "x": 1473,
     "y": 327

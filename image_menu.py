@@ -31,12 +31,15 @@ class ImageMenu(QtWidgets.QFrame):
         bottom.setSpacing(8)
 
         self.btn_pause = QtWidgets.QPushButton("暂停", self)
+        self.setup_btn(self.btn_pause, "pause.png", "暂停")
         self.btn_pause.clicked.connect(lambda: (self.owner.pause_timer(), self.close()))
 
         self.btn_top = QtWidgets.QPushButton("置顶", self)
+        # Dynamic update in refresh_controls
         self.btn_top.clicked.connect(lambda: (self.owner.toggle_always_on_top(), self.refresh_controls(), self.close()))
 
         self.btn_exit = QtWidgets.QPushButton("退出", self)
+        self.setup_btn(self.btn_exit, "exit.png", "退出")
         self.btn_exit.clicked.connect(lambda: (QtWidgets.QApplication.quit(), self.close()))
 
         top.addWidget(self.btn_pause)
@@ -50,6 +53,19 @@ class ImageMenu(QtWidgets.QFrame):
         root.addLayout(top)
         root.addLayout(bottom)
 
+    def setup_btn(self, btn, icon_name, text):
+        path = resolve_menu_icon(icon_name)
+        if path and os.path.exists(path):
+            btn.setText("")
+            btn.setIcon(QtGui.QIcon(path))
+            btn.setIconSize(QtCore.QSize(24, 24))
+            btn.setFixedSize(32, 32)
+            btn.setStyleSheet("QPushButton { border: none; background: transparent; } QPushButton:hover { background: rgba(128, 128, 128, 0.2); border-radius: 4px; }")
+            return True
+        else:
+            btn.setText(text)
+            return False
+
     def show_at(self, global_pos):
         self.refresh_controls()
         self.adjustSize()
@@ -57,5 +73,11 @@ class ImageMenu(QtWidgets.QFrame):
         self.show()
 
     def refresh_controls(self):
-        self.btn_top.setText("取消置顶" if getattr(self.owner, 'always_on_top', True) else "置顶")
+        is_top = getattr(self.owner, 'always_on_top', True)
+        # Try to load pin/unpin icons
+        icon_name = "unpin.png" if is_top else "pin.png"
+        text = "取消置顶" if is_top else "置顶"
+        if not self.setup_btn(self.btn_top, icon_name, text):
+            self.btn_top.setText(text)
+            
         self.btn_interval.setText(self.owner.voice_interval_label_text())
