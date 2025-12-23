@@ -14,6 +14,8 @@ from PySide6.QtMultimedia import QMediaPlayer, QAudioOutput
 LAYOUT_EDIT_MODE = True
 
 
+import winsound
+
 def base_dir():
     return os.path.dirname(os.path.abspath(__file__))
 
@@ -391,7 +393,7 @@ class PomodoroWidget(QtWidgets.QWidget):
         elif self.paused:
             self.paused = False
             self.tick_timer.start()
-            self.play_category('resume', default_file='start.mp3')
+            self.play_category('resume', default_file='resume.mp3')
             self.apply_phase_visuals()
         self.start_button.hide()
 
@@ -404,7 +406,7 @@ class PomodoroWidget(QtWidgets.QWidget):
     def on_tick(self):
         self.elapsed += 1
         self.set_time_text(self.format_time(self.elapsed))
-        self.maybe_ten_minute_voice()
+        self.maybe_interval_voice()
         if self.phase == "working" and self.elapsed >= self.work_duration:
             self.play_category('end', default_file='end.mp3')
             if self.exit_on_work_end:
@@ -417,7 +419,7 @@ class PomodoroWidget(QtWidgets.QWidget):
         elif self.phase == "rest" and self.elapsed >= self.rest_duration:
             self.phase = "working"
             self.elapsed = 0
-            self.play_sound("start.mp3")
+            self.play_category('start', default_file='start.mp3')
             self.apply_phase_visuals()
 
     def apply_phase_visuals(self):
@@ -569,6 +571,8 @@ class PomodoroWidget(QtWidgets.QWidget):
                 self.always_on_top = data.get("always_on_top", self.always_on_top)
                 self.voice_interval_minutes = data.get("voice_interval_minutes", self.voice_interval_minutes)
                 self.exit_on_work_end = data.get("exit_on_work_end", self.exit_on_work_end)
+                self.exit_voice_enabled = data.get("exit_voice_enabled", True)
+                self.sounds_update_url = data.get("sounds_update_url", "")
                 self.setWindowFlag(QtCore.Qt.WindowStaysOnTopHint, self.always_on_top)
                 
                 # Restore layout config
@@ -593,9 +597,11 @@ class PomodoroWidget(QtWidgets.QWidget):
             "rest_duration": self.rest_duration,
             "always_on_top": self.always_on_top,
             "voice_interval_minutes": self.voice_interval_minutes,
-                "exit_on_work_end": self.exit_on_work_end,
-                "layout_config": self.layout_config,
-                "x": self.x(),
+            "exit_on_work_end": self.exit_on_work_end,
+            "exit_voice_enabled": getattr(self, "exit_voice_enabled", True),
+            "sounds_update_url": getattr(self, "sounds_update_url", ""),
+            "layout_config": self.layout_config,
+            "x": self.x(),
             "y": self.y()
         }
         try:
@@ -683,8 +689,9 @@ class PomodoroWidget(QtWidgets.QWidget):
         mapping = {
             'start': self.pool_start,
             'end': self.pool_end,
-            'ten': self.pool_ten,
+            'interval': self.pool_interval,
             'resume': self.pool_resume,
+            'exit': self.pool_exit,
         }
         pool = mapping.get(category, [])
         season = None
@@ -713,11 +720,12 @@ class PomodoroWidget(QtWidgets.QWidget):
     def build_sound_pool(self):
         self.pool_start = []
         self.pool_end = []
-        self.pool_ten = []
+        self.pool_interval = []
         self.pool_resume = []
+        self.pool_exit = []
         self.random_pool = []
-        self.seasonal_pools = {'start': {}, 'end': {}, 'ten': {}, 'resume': {}}
-        self.tag_pools = {'start': {}, 'end': {}, 'ten': {}, 'resume': {}}
+        self.seasonal_pools = {'start': {}, 'end': {}, 'interval': {}, 'resume': {}, 'exit': {}}
+        self.tag_pools = {'start': {}, 'end': {}, 'interval': {}, 'resume': {}, 'exit': {}}
         def add_dir_to(lst, d):
             if os.path.exists(d):
                 for fn in os.listdir(d):
@@ -729,9 +737,10 @@ class PomodoroWidget(QtWidgets.QWidget):
         for root in (base_local, base_parent):
             add_dir_to(self.pool_start, os.path.join(root, 'random', 'start'))
             add_dir_to(self.pool_end, os.path.join(root, 'random', 'end'))
-            add_dir_to(self.pool_ten, os.path.join(root, 'random', 'ten'))
+            add_dir_to(self.pool_interval, os.path.join(root, 'random', 'interval'))
             add_dir_to(self.pool_resume, os.path.join(root, 'random', 'resume'))
-            for cat in ('start', 'end', 'ten', 'resume'):
+            add_dir_to(self.pool_exit, os.path.join(root, 'random', 'exit'))
+            for cat in ('start', 'end', 'interval', 'resume', 'exit'):
                 base_cat = os.path.join(root, 'random', cat)
                 if os.path.exists(base_cat):
                     for s in os.listdir(base_cat):
@@ -755,9 +764,10 @@ class PomodoroWidget(QtWidgets.QWidget):
         cloud_root = os.path.join(base_dir(), 'sounds', 'cloud')
         add_dir_to(self.pool_start, os.path.join(cloud_root, 'start'))
         add_dir_to(self.pool_end, os.path.join(cloud_root, 'end'))
-        add_dir_to(self.pool_ten, os.path.join(cloud_root, 'ten'))
+        add_dir_to(self.pool_interval, os.path.join(cloud_root, 'interval'))
         add_dir_to(self.pool_resume, os.path.join(cloud_root, 'resume'))
-        for cat in ('start', 'end', 'ten', 'resume'):
+        add_dir_to(self.pool_exit, os.path.join(cloud_root, 'exit'))
+        for cat in ('start', 'end', 'interval', 'resume', 'exit'):
             base_cat = os.path.join(cloud_root, cat)
             if os.path.exists(base_cat):
                 for s in os.listdir(base_cat):
@@ -789,12 +799,19 @@ class PomodoroWidget(QtWidgets.QWidget):
             if not base_url:
                 return
             try:
+                # Setup request with User-Agent to avoid blocking by some free hosts
+                headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'}
+                
                 manifest_url = base_url.rstrip('/') + '/manifest.json'
-                with urllib.request.urlopen(manifest_url, timeout=10) as resp:
+                req = urllib.request.Request(manifest_url, headers=headers)
+                
+                with urllib.request.urlopen(req, timeout=10) as resp:
                     data = json.loads(resp.read().decode('utf-8'))
+                
                 files = data if isinstance(data, list) else data.get('files', [])
                 cloud_root = os.path.join(base_dir(), 'sounds', 'cloud')
                 os.makedirs(cloud_root, exist_ok=True)
+                
                 for item in files:
                     if isinstance(item, str):
                         url = item
@@ -812,14 +829,23 @@ class PomodoroWidget(QtWidgets.QWidget):
                             target_dir = os.path.join(cloud_root, cat, 'tags', tag)
                         else:
                             target_dir = os.path.join(cloud_root, cat)
+                    
                     os.makedirs(target_dir, exist_ok=True)
                     name = os.path.basename(url)
                     dest = os.path.join(target_dir, name)
+                    
                     if url and not os.path.exists(dest):
-                        urllib.request.urlretrieve(url, dest)
+                        try:
+                            # Download with headers
+                            file_req = urllib.request.Request(url, headers=headers)
+                            with urllib.request.urlopen(file_req, timeout=30) as f_src, open(dest, 'wb') as f_dst:
+                                f_dst.write(f_src.read())
+                        except Exception as e:
+                            print(f"Failed to download {name}: {e}")
+                            
                 self.build_sound_pool()
-            except Exception:
-                pass
+            except Exception as e:
+                print(f"Update check failed: {e}")
         threading.Thread(target=worker, daemon=True).start()
 
     def current_season(self):
@@ -846,7 +872,7 @@ class PomodoroWidget(QtWidgets.QWidget):
         s = str(v).strip().lower()
         return s in ('1', 'true', 'yes', 'on') if default else s not in ('0', 'false', 'no', 'off')
 
-    def toggle_ten_voice(self):
+    def toggle_interval_voice(self):
         self.cycle_voice_interval()
         self.menu_overlay.refresh_controls()
         self.apply_phase_visuals()
@@ -869,14 +895,93 @@ class PomodoroWidget(QtWidgets.QWidget):
             return "不额外播放语音"
         return f"每{m}分钟播放语音"
 
-    # 每10分钟随机语音（分类池优先，空则兜底池）
-    def maybe_ten_minute_voice(self):
+    # 间隔语音（分类池优先，空则兜底池）
+    def maybe_interval_voice(self):
         interval = int(self.voice_interval_minutes or 0)
         if interval > 0 and self.phase == 'working' and self.elapsed > 0 and self.elapsed % (interval * 60) == 0:
-            if self.pool_ten:
-                self.play_category('ten')
+            # Use interval.mp3 as fallback if available, or just ignore if not
+            self.play_category('interval', default_file='interval.mp3')
+
+    def play_exit_voice(self):
+        if not getattr(self, 'exit_voice_enabled', True):
+            return
+        
+        # Try to play exit voice synchronously (or as close as possible)
+        # Since closeEvent kills the app, we need to be careful.
+        # However, QMediaPlayer is async.
+        # Strategy: play sound, then block for a few seconds or until finished?
+        # But we can't easily block for QMediaPlayer signals in a simple function without a loop.
+        # Let's try to just play it and delay the close slightly?
+        
+        # Actually, for "exit" sound, it's better to hide the window and keep the app running until sound finishes.
+        # But closeEvent is tricky.
+        pass
+
+    def toggle_exit_voice(self):
+        self.exit_voice_enabled = not getattr(self, 'exit_voice_enabled', True)
+        self.save_settings()
+
+    def closeEvent(self, event):
+        if getattr(self, 'exit_voice_enabled', True):
+            # If we are already closing (flag?), proceed.
+            if getattr(self, '_closing_for_real', False):
+                self.save_settings()
+                super().closeEvent(event)
+                return
+
+            # Initiate exit sequence
+            event.ignore()
+            
+            # Hide the window immediately (looks like it closed)
+            self.hide()
+            self._closing_for_real = True
+
+            # Use winsound for blocking playback (Windows only)
+            # This is much more reliable for exit sounds than QMediaPlayer
+            # Find an exit sound file
+            sound_file = None
+            
+            # 1. Try random pool
+            if self.pool_exit:
+                sound_file = random.choice(self.pool_exit)
+            
+            # 2. Try default file
+            if not sound_file:
+                default_path = sound_path('exit.mp3')
+                if os.path.exists(default_path):
+                    sound_file = default_path
+            
+            if sound_file:
+                print(f"Playing exit sound via winsound: {sound_file}")
+                # Play asynchronously first so UI thread isn't totally frozen if we wanted to animate,
+                # but here we are exiting, so blocking is actually fine/good.
+                # However, winsound.PlaySound doesn't support MP3 well directly? 
+                # Wait, winsound only plays WAV! QMediaPlayer plays MP3.
+                # Ah, that's the catch.
+                
+                # If files are MP3, winsound won't work easily without external codec or MCI.
+                # Let's try QMediaPlayer again but KEEP THE APP ALIVE properly.
+                
+                # The issue might be that the run loop is dying or QMediaPlayer is being garbage collected.
+                
+                # Alternative: Use a separate thread or just block?
+                # QMediaPlayer is async.
+                
+                self.play_category('exit', default_file='exit.mp3')
+                
+                # Force event loop processing
+                loop = QtCore.QEventLoop()
+                QtCore.QTimer.singleShot(3000, loop.quit)
+                loop.exec()
+                
             else:
-                self.play_random_voice()
+                print("No exit sound found.")
+            
+            QtWidgets.QApplication.quit()
+            
+        else:
+            self.save_settings()
+            super().closeEvent(event)
 
 
 def check_resources():
@@ -901,6 +1006,17 @@ def check_resources():
         print(f"图片 {name}: {'OK' if has_any(l, p) else '缺失'}")
     opt_img = ("resume.png", asset_path("resume.png"), os.path.join(parent, "assets", "resume.png"))
     print(f"图片 {opt_img[0]}(可选): {'OK' if has_any(opt_img[1], opt_img[2]) else '缺失'}")
+    
+    # Check menu icons
+    menu_icons = ["pause.png", "stop.png", "reset.png", "setting.png", "pin.png", "voice.png", "exit.png"]
+    menu_dir_local = os.path.join(root, "assets", "menu")
+    menu_dir_parent = os.path.join(parent, "assets", "menu")
+    print("菜单图标(可选，手绘风格):")
+    for icon in menu_icons:
+        l = os.path.join(menu_dir_local, icon)
+        p = os.path.join(menu_dir_parent, icon)
+        print(f"  {icon}: {'OK' if has_any(l, p) else '缺失'}")
+        
     digits_local = os.path.join(root, "assets", "digits")
     digits_parent = os.path.join(parent, "assets", "digits")
     ddir = digits_local if os.path.exists(digits_local) else digits_parent
@@ -910,10 +1026,13 @@ def check_resources():
         ("start.mp3", sound_path("start.mp3"), os.path.join(parent, "sounds", "start.mp3")),
         ("end.mp3", sound_path("end.mp3"), os.path.join(parent, "sounds", "end.mp3")),
         ("rest_start.mp3", sound_path("rest_start.mp3"), os.path.join(parent, "sounds", "rest_start.mp3")),
+        ("interval.mp3", sound_path("interval.mp3"), os.path.join(parent, "sounds", "interval.mp3")),
+        ("resume.mp3", sound_path("resume.mp3"), os.path.join(parent, "sounds", "resume.mp3")),
+        ("exit.mp3", sound_path("exit.mp3"), os.path.join(parent, "sounds", "exit.mp3")),
     ]
     for name, l, p in sounds:
         print(f"音频 {name}: {'OK' if has_any(l, p) else '缺失'}")
-    cats = ["start", "end", "ten", "resume"]
+    cats = ["start", "end", "interval", "resume", "exit"]
     for cat in cats:
         c_local = audio_count(os.path.join(root, "sounds", "random", cat))
         c_parent = audio_count(os.path.join(parent, "sounds", "random", cat))

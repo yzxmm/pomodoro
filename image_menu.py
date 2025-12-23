@@ -50,6 +50,10 @@ class ImageMenu(QtWidgets.QFrame):
         self.btn_interval.clicked.connect(lambda: (self.owner.cycle_voice_interval(), self.refresh_controls()))
         bottom.addWidget(self.btn_interval)
 
+        self.btn_exit_voice = QtWidgets.QPushButton("", self)
+        self.btn_exit_voice.clicked.connect(lambda: (self.owner.toggle_exit_voice(), self.refresh_controls()))
+        bottom.addWidget(self.btn_exit_voice)
+
         root.addLayout(top)
         root.addLayout(bottom)
 
@@ -81,3 +85,8 @@ class ImageMenu(QtWidgets.QFrame):
             self.btn_top.setText(text)
             
         self.btn_interval.setText(self.owner.voice_interval_label_text())
+        
+        exit_voice_on = getattr(self.owner, 'exit_voice_enabled', True)
+        # State labeling: "退出语音：开启" means it IS On. "退出语音：关闭" means it IS Off.
+        state_text = "开启" if exit_voice_on else "关闭"
+        self.btn_exit_voice.setText(f"退出语音：{state_text}")

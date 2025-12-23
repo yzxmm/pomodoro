@@ -13,15 +13,19 @@ This document lists all the resource files required for the official release. Pl
 | `resume.png` | **继续按钮** (暂停时显示) | 100x100 | PNG (显示在人物中间) |
 | `start_btn.png` | **开始按钮** (右上角) | 50x50 | PNG图标 |
 
-## 2. 菜单图标 (Menu Icons)
+## 2. 菜单图标 (Menu Icons) - 手绘风格
 **存放目录 / Directory:** `assets/menu/`
+*注意：用户指定所有右键菜单图标均需为手绘风格。*
 
 | 文件名 (Filename) | 描述 (Description) | 推荐尺寸 (Size) | 备注 (Note) |
 | :--- | :--- | :--- | :--- |
-| `pause.png` | **暂停**菜单项图标 | 24x24 | PNG |
-| `exit.png` | **退出**菜单项图标 | 24x24 | PNG |
-| `pin.png` | **置顶**图标 (当前未置顶时显示) | 24x24 | PNG |
-| `unpin.png` | **取消置顶**图标 (当前已置顶时显示) | 24x24 | PNG |
+| `pause.png` | **暂停/继续**菜单项图标 | 32x32 | PNG 手绘风格 |
+| `stop.png` | **结束**菜单项图标 | 32x32 | PNG 手绘风格 |
+| `reset.png` | **重置**菜单项图标 | 32x32 | PNG 手绘风格 |
+| `setting.png` | **设置**菜单项图标 | 32x32 | PNG 手绘风格 |
+| `pin.png` | **置顶**图标 (切换状态) | 32x32 | PNG 手绘风格 |
+| `voice.png` | **声音**开关图标 (通用) | 32x32 | PNG 手绘风格 |
+| `exit.png` | **退出**菜单项图标 | 32x32 | PNG 手绘风格 |
 
 ## 3. 手写数字 (Handwritten Digits)
 **存放目录 / Directory:** `assets/digits/`
@@ -41,6 +45,9 @@ This document lists all the resource files required for the official release. Pl
 | `start.mp3` | **开始工作**时的提示音 | MP3 | |
 | `end.mp3` | **工作结束**时的提示音 | MP3 | |
 | `rest_start.mp3` | **开始休息**时的提示音 | MP3 | |
+| `interval.mp3` | **每N分钟**的默认提示音 | MP3 | (可选) 原名 ten.mp3 |
+| `resume.mp3` | **暂停后继续**的默认提示音 | MP3 | (可选) |
+| `exit.mp3` | **退出程序**时的提示音 | MP3 | (可选) |
 
 ## 5. 随机语音池 (Random Voice Pools)
 **存放目录 / Directory:** `sounds/random/`
@@ -50,8 +57,9 @@ This document lists all the resource files required for the official release. Pl
 | :--- | :--- | :--- |
 | `start/` | **开始工作**时的随机语音 | 放入多个 `.mp3` 文件 |
 | `end/` | **工作结束**时的随机语音 | 放入多个 `.mp3` 文件 |
-| `ten/` | **每10分钟**的整点报时/提醒 | 放入多个 `.mp3` 文件 |
+| `interval/` | **每N分钟**的整点报时/提醒 | 放入多个 `.mp3` 文件 |
 | `resume/` | **暂停后继续**时的随机语音 | 放入多个 `.mp3` 文件 |
+| `exit/` | **退出程序**时的随机语音 | 放入多个 `.mp3` 文件 |
 
 ---
 

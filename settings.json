@@ -1,16 +1,18 @@
 {
-    "work_duration": 2400,
+    "work_duration": 1800,
     "rest_duration": 900,
     "always_on_top": true,
     "voice_interval_minutes": 10,
     "exit_on_work_end": false,
+    "exit_voice_enabled": true,
+    "sounds_update_url": "https://raw.githubusercontent.com/yzxmm/pomodoro-assets/main/manifest.json",
     "layout_config": {
-        "time_x": 0.28,
-        "time_y": 0.545,
+        "time_x": 0.275,
+        "time_y": 0.5775,
         "time_w": 0.4625,
         "time_h": 0.215,
         "font_size": 50
     },
-    "x": 1473,
-    "y": 327
+    "x": 1108,
+    "y": 422
 }

@@ -1,80 +1,86 @@
 import os
+import json
 import urllib.request
 import urllib.error
-import threading
 from PySide6 import QtCore, QtWidgets
-
-# 配置云端资源的基础URL (请修改为您自己的服务器地址)
-# Configure the base URL for cloud resources (Please change to your own server address)
-CLOUD_BASE_URL = "https://example.com/pomodoro_assets/"
-
-# 必需的资源列表
-# List of required resources
-REQUIRED_RESOURCES = [
-    # 仅下载音频资源
-    "sounds/start.mp3",
-    "sounds/end.mp3",
-    "sounds/rest_start.mp3",
-]
-
-# 添加数字资源
-# Add digit resources
-# for i in range(10):
-#    REQUIRED_RESOURCES.append(f"assets/digits/{i}.png")
-# REQUIRED_RESOURCES.append("assets/digits/colon.png")
 
 class DownloadWorker(QtCore.QObject):
     finished = QtCore.Signal()
-    progress = QtCore.Signal(str) # 这里的 str 是当前正在下载的文件名
+    progress = QtCore.Signal(str) # Message to display
 
     def __init__(self, base_dir):
         super().__init__()
         self.base_dir = base_dir
 
     def run(self):
-        # 检查是否配置了有效的 URL
-        if "example.com" in CLOUD_BASE_URL:
-            print("Warning: CLOUD_BASE_URL is not configured. Skipping download.")
+        settings_path = os.path.join(self.base_dir, "settings.json")
+        manifest_url = ""
+        
+        # 1. Load settings to get manifest URL
+        if os.path.exists(settings_path):
+            try:
+                with open(settings_path, "r", encoding="utf-8") as f:
+                    settings = json.load(f)
+                    manifest_url = settings.get("sounds_update_url", "")
+            except Exception as e:
+                print(f"Error reading settings: {e}")
+
+        if not manifest_url:
+            print("No sounds_update_url found in settings.json")
             self.finished.emit()
             return
 
-        parent_dir = os.path.dirname(self.base_dir)
+        self.progress.emit("Checking for updates...")
         
-        # 检查并创建必要的目录
-        # Check and create necessary directories
-        dirs_to_check = [
-            os.path.join(self.base_dir, "assets"),
-            os.path.join(self.base_dir, "assets", "digits"),
-            os.path.join(self.base_dir, "sounds"),
-        ]
-        for d in dirs_to_check:
-            if not os.path.exists(d):
-                os.makedirs(d, exist_ok=True)
+        # 2. Download manifest
+        try:
+            print(f"Fetching manifest from {manifest_url}")
+            with urllib.request.urlopen(manifest_url) as response:
+                data = response.read()
+                manifest = json.loads(data)
+        except Exception as e:
+            print(f"Failed to fetch manifest: {e}")
+            self.finished.emit()
+            return
 
-        for rel_path in REQUIRED_RESOURCES:
-            local_path = os.path.join(self.base_dir, rel_path)
+        files = manifest.get("files", [])
+        if not files:
+            print("No files found in manifest")
+            self.finished.emit()
+            return
+
+        # 3. Download files
+        total_files = len(files)
+        for index, item in enumerate(files):
+            file_url = item.get("url")
+            category = item.get("category")
             
-            # 检查上一级目录是否存在资源 (开发环境兼容)
-            # Check parent directory for resources (dev environment compatibility)
-            parent_path = os.path.join(parent_dir, rel_path)
-            
-            if os.path.exists(local_path) or os.path.exists(parent_path):
+            if not file_url or not category:
                 continue
-
-            # 下载资源
-            # Download resource
-            url = CLOUD_BASE_URL + rel_path.replace("\\", "/")
-            self.progress.emit(f"Downloading {rel_path}...")
+                
+            # Determine local path
+            # Strategy: sounds/random/{category}/{filename}
+            filename = file_url.split("/")[-1]
+            # Decode URL encoded filename if necessary, but usually simple enough
+            
+            target_dir = os.path.join(self.base_dir, "sounds", "random", category)
+            local_path = os.path.join(target_dir, filename)
+            
+            if not os.path.exists(target_dir):
+                os.makedirs(target_dir, exist_ok=True)
+            
+            if os.path.exists(local_path):
+                # Skip if exists (simple caching)
+                continue
+                
+            self.progress.emit(f"Downloading ({index+1}/{total_files}): {filename}")
+            
             try:
-                # 确保目标目录存在
-                target_dir = os.path.dirname(local_path)
-                if not os.path.exists(target_dir):
-                    os.makedirs(target_dir, exist_ok=True)
-                    
-                print(f"Downloading {url} to {local_path}")
-                urllib.request.urlretrieve(url, local_path)
+                print(f"Downloading {file_url} to {local_path}")
+                # Set a timeout for downloads
+                urllib.request.urlretrieve(file_url, local_path)
             except Exception as e:
-                print(f"Failed to download {url}: {e}")
+                print(f"Failed to download {file_url}: {e}")
         
         self.finished.emit()
 

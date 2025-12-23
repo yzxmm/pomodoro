@@ -1,6 +1,7 @@
 # Build outputs
 build/
 dist/
+cloud/
 
 # Python
 __pycache__/**
