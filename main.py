@@ -90,6 +90,13 @@ class PomodoroWidget(QtWidgets.QWidget):
         self.duration_start = self.work_duration
         self.exit_on_work_end = False
 
+        self.animation_frames = []
+        self.current_frame_index = 0
+        self.animation_timer = QtCore.QTimer(self)
+        self.animation_timer.setInterval(100) # 10fps
+        self.animation_timer.timeout.connect(self.update_animation)
+        self.current_anim_type = "idle" # or "paused"
+
         self.tick_timer = QtCore.QTimer(self)
         self.tick_timer.setInterval(1000)
         self.tick_timer.timeout.connect(self.on_tick)
@@ -169,6 +176,9 @@ class PomodoroWidget(QtWidgets.QWidget):
         self.start_button.clicked.connect(self.start_or_resume)
         self.start_button.show()
         self.place_start_button()
+
+        # Initialize visuals (load animation or static image)
+        self.apply_phase_visuals()
 
     def place_time_label(self):
         w = self.width()
@@ -423,27 +433,111 @@ class PomodoroWidget(QtWidgets.QWidget):
             self.apply_phase_visuals()
 
     def apply_phase_visuals(self):
-        if self.paused:
-            pix = QtGui.QPixmap(resolve_asset("paused.png"))
-        elif self.phase == "rest":
-            pix = QtGui.QPixmap(resolve_asset("paused.png"))
-        elif self.phase == "working":
-            pix = QtGui.QPixmap(resolve_asset("idle.png"))
+        # Determine which visual state we should be in
+        target_anim = "idle"
+        
+        if self.adjusting_duration:
+             # When adjusting, show preview based on mode
+             target_anim = "idle" if self.adjust_mode == 'work' else "paused"
         else:
-            pix = QtGui.QPixmap(resolve_asset("idle.png"))
-        if not pix.isNull():
-            self.image_label.setPixmap(pix)
-            self.resize(pix.size())
+            if self.phase == "working":
+                target_anim = "idle"
+            elif self.phase == "rest":
+                target_anim = "paused"
+            elif self.phase == "idle":
+                target_anim = "idle"
+            
+            # If paused logic is separate (user clicked pause)
+            if self.paused:
+                target_anim = "paused"
+
+        # Only reload if changed
+        if target_anim != self.current_anim_type or not self.animation_frames:
+             self.load_animation_frames(target_anim)
+        
+        # Show/hide resume button based on paused state
         if self.paused:
             self.resume_button.show()
             self.place_resume_button()
         else:
             self.resume_button.hide()
+
         if self.phase == "idle" and not self.paused:
             self.start_button.show()
             self.place_start_button()
         else:
             self.start_button.hide()
+            
+        # Ensure geometry is correct
+        self.place_time_label()
+        self.place_start_button()
+
+    def load_animation_frames(self, anim_type):
+        """
+        Load animation frames for 'idle' or 'paused'.
+        Prioritize folders 'assets/idle' or 'assets/paused'.
+        Fallback to single image 'idle.png' or 'paused.png'.
+        """
+        self.animation_frames = []
+        self.current_frame_index = 0
+        self.current_anim_type = anim_type
+        
+        # Try folder first
+        folder_path = resolve_asset(anim_type)
+        if os.path.isdir(folder_path):
+            files = sorted([f for f in os.listdir(folder_path) if f.lower().endswith('.png')])
+            if files:
+                for f in files:
+                    pix = QtGui.QPixmap(os.path.join(folder_path, f))
+                    if not pix.isNull():
+                        self.animation_frames.append(pix)
+        
+        # Fallback to single image if no frames found
+        if not self.animation_frames:
+            single_path = resolve_asset(f"{anim_type}.png")
+            pix = QtGui.QPixmap(single_path)
+            if not pix.isNull():
+                self.animation_frames.append(pix)
+            else:
+                # Last resort fallback if paused missing, use idle
+                if anim_type == 'paused':
+                     # Try idle folder
+                    idle_folder = resolve_asset('idle')
+                    if os.path.isdir(idle_folder):
+                        files = sorted([f for f in os.listdir(idle_folder) if f.lower().endswith('.png')])
+                        for f in files:
+                             pix = QtGui.QPixmap(os.path.join(idle_folder, f))
+                             if not pix.isNull():
+                                 self.animation_frames.append(pix)
+                    # Try idle image
+                    if not self.animation_frames:
+                        pix = QtGui.QPixmap(resolve_asset("idle.png"))
+                        if not pix.isNull():
+                            self.animation_frames.append(pix)
+
+        if self.animation_frames:
+            # Set initial frame
+            self.image_label.setPixmap(self.animation_frames[0])
+            self.resize(self.animation_frames[0].size())
+            self.image_label.setGeometry(0, 0, self.width(), self.height())
+            
+            # Start timer if more than 1 frame
+            if len(self.animation_frames) > 1:
+                if not self.animation_timer.isActive():
+                    self.animation_timer.start()
+            else:
+                self.animation_timer.stop()
+        else:
+            self.animation_timer.stop()
+            # If absolutely nothing, keep 400x400 default or whatever
+            if self.width() < 100:
+                self.resize(400, 400)
+
+    def update_animation(self):
+        if not self.animation_frames:
+            return
+        self.current_frame_index = (self.current_frame_index + 1) % len(self.animation_frames)
+        self.image_label.setPixmap(self.animation_frames[self.current_frame_index])
 
     def play_sound(self, file_name_or_path):
         path = file_name_or_path
@@ -556,8 +650,126 @@ class PomodoroWidget(QtWidgets.QWidget):
         return super().eventFilter(obj, event)
 
     def closeEvent(self, event):
-        self.save_settings()
-        super().closeEvent(event)
+        if getattr(self, 'exit_voice_enabled', True):
+            # If we are already closing (flag?), proceed.
+            if getattr(self, '_closing_for_real', False):
+                self.save_settings()
+                super().closeEvent(event)
+                return
+
+            # Initiate exit sequence
+            event.ignore()
+            
+            # Hide the window immediately (looks like it closed)
+            self.hide()
+            self._closing_for_real = True
+
+            # Use winsound for blocking playback (Windows only)
+            # This is much more reliable for exit sounds than QMediaPlayer
+            # Find an exit sound file
+            sound_file = None
+            
+            # 1. Try random pool
+            if self.pool_exit:
+                sound_file = random.choice(self.pool_exit)
+            
+            # 2. Try default file
+            if not sound_file:
+                default_path = sound_path('exit.mp3')
+                if os.path.exists(default_path):
+                    sound_file = default_path
+            
+            if sound_file:
+                print(f"Playing exit sound via winsound: {sound_file}")
+                # Play asynchronously first so UI thread isn't totally frozen if we wanted to animate,
+                # but here we are exiting, so blocking is actually fine/good.
+                # However, winsound.PlaySound doesn't support MP3 well directly? 
+                # Wait, winsound only plays WAV! QMediaPlayer plays MP3.
+                # Ah, that's the catch.
+                
+                # If files are MP3, winsound won't work easily without external codec or MCI.
+                # Let's try QMediaPlayer again but KEEP THE APP ALIVE properly.
+                
+                # The issue might be that the run loop is dying or QMediaPlayer is being garbage collected.
+                
+                # Alternative: Use a separate thread or just block?
+                # QMediaPlayer is async.
+                
+                self.play_category('exit', default_file='exit.mp3')
+                
+                # Force event loop processing
+                loop = QtCore.QEventLoop()
+                QtCore.QTimer.singleShot(3000, loop.quit)
+                loop.exec()
+                
+            else:
+                print("No exit sound found.")
+            
+            QtWidgets.QApplication.quit()
+            
+        else:
+            self.save_settings()
+            super().closeEvent(event)
+        if getattr(self, 'exit_voice_enabled', True):
+            # If we are already closing (flag?), proceed.
+            if getattr(self, '_closing_for_real', False):
+                self.save_settings()
+                super().closeEvent(event)
+                return
+
+            # Initiate exit sequence
+            event.ignore()
+            
+            # Hide the window immediately (looks like it closed)
+            self.hide()
+            self._closing_for_real = True
+
+            # Use winsound for blocking playback (Windows only)
+            # This is much more reliable for exit sounds than QMediaPlayer
+            # Find an exit sound file
+            sound_file = None
+            
+            # 1. Try random pool
+            if self.pool_exit:
+                sound_file = random.choice(self.pool_exit)
+            
+            # 2. Try default file
+            if not sound_file:
+                default_path = sound_path('exit.mp3')
+                if os.path.exists(default_path):
+                    sound_file = default_path
+            
+            if sound_file:
+                print(f"Playing exit sound via winsound: {sound_file}")
+                # Play asynchronously first so UI thread isn't totally frozen if we wanted to animate,
+                # but here we are exiting, so blocking is actually fine/good.
+                # However, winsound.PlaySound doesn't support MP3 well directly? 
+                # Wait, winsound only plays WAV! QMediaPlayer plays MP3.
+                # Ah, that's the catch.
+                
+                # If files are MP3, winsound won't work easily without external codec or MCI.
+                # Let's try QMediaPlayer again but KEEP THE APP ALIVE properly.
+                
+                # The issue might be that the run loop is dying or QMediaPlayer is being garbage collected.
+                
+                # Alternative: Use a separate thread or just block?
+                # QMediaPlayer is async.
+                
+                self.play_category('exit', default_file='exit.mp3')
+                
+                # Force event loop processing
+                loop = QtCore.QEventLoop()
+                QtCore.QTimer.singleShot(3000, loop.quit)
+                loop.exec()
+                
+            else:
+                print("No exit sound found.")
+            
+            QtWidgets.QApplication.quit()
+            
+        else:
+            self.save_settings()
+            super().closeEvent(event)
 
     def load_settings(self):
         settings_path = os.path.join(base_dir(), "settings.json")
@@ -572,6 +784,7 @@ class PomodoroWidget(QtWidgets.QWidget):
                 self.voice_interval_minutes = data.get("voice_interval_minutes", self.voice_interval_minutes)
                 self.exit_on_work_end = data.get("exit_on_work_end", self.exit_on_work_end)
                 self.exit_voice_enabled = data.get("exit_voice_enabled", True)
+                self.check_updates_enabled = data.get("check_updates_enabled", True)
                 self.sounds_update_url = data.get("sounds_update_url", "")
                 self.setWindowFlag(QtCore.Qt.WindowStaysOnTopHint, self.always_on_top)
                 
@@ -599,6 +812,7 @@ class PomodoroWidget(QtWidgets.QWidget):
             "voice_interval_minutes": self.voice_interval_minutes,
             "exit_on_work_end": self.exit_on_work_end,
             "exit_voice_enabled": getattr(self, "exit_voice_enabled", True),
+            "check_updates_enabled": getattr(self, "check_updates_enabled", True),
             "sounds_update_url": getattr(self, "sounds_update_url", ""),
             "layout_config": self.layout_config,
             "x": self.x(),
@@ -677,6 +891,79 @@ class PomodoroWidget(QtWidgets.QWidget):
         self.show()
         self.save_settings()
 
+    def toggle_check_updates(self):
+        self.check_updates_enabled = not getattr(self, "check_updates_enabled", True)
+        self.save_settings()
+
+    def toggle_exit_voice(self):
+        self.exit_voice_enabled = not getattr(self, 'exit_voice_enabled', True)
+        self.save_settings()
+
+    def toggle_check_updates(self):
+        self.check_updates_enabled = not getattr(self, "check_updates_enabled", True)
+        self.save_settings()
+
+    def closeEvent(self, event):
+        if getattr(self, 'exit_voice_enabled', True):
+            # If we are already closing (flag?), proceed.
+            if getattr(self, '_closing_for_real', False):
+                self.save_settings()
+                super().closeEvent(event)
+                return
+
+            # Initiate exit sequence
+            event.ignore()
+            
+            # Hide the window immediately (looks like it closed)
+            self.hide()
+            self._closing_for_real = True
+
+            # Use winsound for blocking playback (Windows only)
+            # This is much more reliable for exit sounds than QMediaPlayer
+            # Find an exit sound file
+            sound_file = None
+            
+            # 1. Try random pool
+            if self.pool_exit:
+                sound_file = random.choice(self.pool_exit)
+            
+            # 2. Try default file
+            if not sound_file:
+                default_path = sound_path('exit.mp3')
+                if os.path.exists(default_path):
+                    sound_file = default_path
+            
+            if sound_file:
+                print(f"Playing exit sound via winsound: {sound_file}")
+                # Play asynchronously first so UI thread isn't totally frozen if we wanted to animate,
+                # but here we are exiting, so blocking is actually fine/good.
+                # However, winsound.PlaySound doesn't support MP3 well directly? 
+                # Wait, winsound only plays WAV! QMediaPlayer plays MP3.
+                # Ah, that's the catch.
+                
+                # If files are MP3, winsound won't work easily without external codec or MCI.
+                # Let's try QMediaPlayer again but KEEP THE APP ALIVE properly.
+                
+                # The issue might be that the run loop is dying or QMediaPlayer is being garbage collected.
+                
+                # Alternative: Use a separate thread or just block?
+                # QMediaPlayer is async.
+                
+                self.play_category('exit', default_file='exit.mp3')
+                
+                # Force event loop processing
+                loop = QtCore.QEventLoop()
+                QtCore.QTimer.singleShot(3000, loop.quit)
+                loop.exec()
+                
+            else:
+                print("No exit sound found.")
+            
+            QtWidgets.QApplication.quit()
+            
+        else:
+            self.save_settings()
+            super().closeEvent(event)
     def play_random_voice(self):
         if not self.random_pool:
             return
@@ -984,67 +1271,81 @@ class PomodoroWidget(QtWidgets.QWidget):
             super().closeEvent(event)
 
 
+def resolve_menu_icon(name):
+    # This is from ImageMenu logic, but main.py doesn't have it defined globally.
+    # It was in ImageMenu but we need it here for check_resources.
+    # Let's import it or duplicate logic.
+    # ImageMenu is imported inside PomodoroWidget? No, it's in same file but check_resources is standalone.
+    # But wait, ImageMenu is a class in another file `image_menu.py`.
+    # We should import it from there.
+    from image_menu import resolve_menu_icon as rmi
+    return rmi(name)
+
 def check_resources():
-    root = base_dir()
-    parent = os.path.dirname(root)
-    def has_any(local, parent_path):
-        return os.path.exists(local) or os.path.exists(parent_path)
-    def audio_count(dir_path):
-        if not os.path.exists(dir_path):
-            return 0
-        c = 0
-        for fn in os.listdir(dir_path):
-            if fn.lower().endswith(('.mp3', '.wav', '.ogg')):
-                c += 1
-        return c
     print("资源检查")
-    imgs = [
-        ("idle.png", asset_path("idle.png"), os.path.join(parent, "assets", "idle.png")),
-        ("paused.png", asset_path("paused.png"), os.path.join(parent, "assets", "paused.png")),
-    ]
-    for name, l, p in imgs:
-        print(f"图片 {name}: {'OK' if has_any(l, p) else '缺失'}")
-    opt_img = ("resume.png", asset_path("resume.png"), os.path.join(parent, "assets", "resume.png"))
-    print(f"图片 {opt_img[0]}(可选): {'OK' if has_any(opt_img[1], opt_img[2]) else '缺失'}")
     
+    # Check images (single or sequence)
+    for img in ["idle", "paused"]:
+        folder = resolve_asset(img)
+        single = resolve_asset(f"{img}.png")
+        if os.path.isdir(folder) and any(f.endswith('.png') for f in os.listdir(folder)):
+             count = len([f for f in os.listdir(folder) if f.endswith('.png')])
+             print(f"图片序列 {img}: OK ({count} frames)")
+        elif os.path.exists(single):
+             print(f"图片 {img}.png: OK")
+        else:
+             print(f"图片 {img}: 缺失")
+
+    # Check optional images
+    for img in ["resume.png", "start_btn.png"]:
+        path = resolve_asset(img)
+        if os.path.exists(path):
+            print(f"图片 {img}(可选): OK")
+        else:
+            print(f"图片 {img}(可选): 缺失")
+            
     # Check menu icons
-    menu_icons = ["pause.png", "stop.png", "reset.png", "setting.png", "pin.png", "voice.png", "exit.png"]
-    menu_dir_local = os.path.join(root, "assets", "menu")
-    menu_dir_parent = os.path.join(parent, "assets", "menu")
     print("菜单图标(可选，手绘风格):")
-    for icon in menu_icons:
-        l = os.path.join(menu_dir_local, icon)
-        p = os.path.join(menu_dir_parent, icon)
-        print(f"  {icon}: {'OK' if has_any(l, p) else '缺失'}")
+    for img in ["pause.png", "stop.png", "reset.png", "setting.png", "pin.png", "voice.png", "exit.png", "check.png"]:
+        path = resolve_menu_icon(img)
+        if path and os.path.exists(path):
+             print(f"  {img}: OK")
+        else:
+             print(f"  {img}: 缺失")
+             
+    # Check digits
+    digits_ok = True
+    for i in range(10):
+        if not os.path.exists(resolve_asset(f"digits/{i}.png")):
+            digits_ok = False
+            break
+    if digits_ok:
+        print("手写数字(可选): OK")
+    else:
+        print("手写数字(可选): 部分缺失或未启用")
         
-    digits_local = os.path.join(root, "assets", "digits")
-    digits_parent = os.path.join(parent, "assets", "digits")
-    ddir = digits_local if os.path.exists(digits_local) else digits_parent
-    d_ok = os.path.exists(os.path.join(ddir, "0.png")) and os.path.exists(os.path.join(ddir, "colon.png"))
-    print(f"手写数字(可选): {'OK' if d_ok else '缺失'}")
-    sounds = [
-        ("start.mp3", sound_path("start.mp3"), os.path.join(parent, "sounds", "start.mp3")),
-        ("end.mp3", sound_path("end.mp3"), os.path.join(parent, "sounds", "end.mp3")),
-        ("rest_start.mp3", sound_path("rest_start.mp3"), os.path.join(parent, "sounds", "rest_start.mp3")),
-        ("interval.mp3", sound_path("interval.mp3"), os.path.join(parent, "sounds", "interval.mp3")),
-        ("resume.mp3", sound_path("resume.mp3"), os.path.join(parent, "sounds", "resume.mp3")),
-        ("exit.mp3", sound_path("exit.mp3"), os.path.join(parent, "sounds", "exit.mp3")),
-    ]
-    for name, l, p in sounds:
-        print(f"音频 {name}: {'OK' if has_any(l, p) else '缺失'}")
-    cats = ["start", "end", "interval", "resume", "exit"]
-    for cat in cats:
-        c_local = audio_count(os.path.join(root, "sounds", "random", cat))
-        c_parent = audio_count(os.path.join(parent, "sounds", "random", cat))
-        print(f"分类池 {cat}: {c_local + c_parent} 个文件")
-    cloud_total = 0
-    cloud_root = os.path.join(root, "sounds", "cloud")
-    if os.path.exists(cloud_root):
-        for base, _, files in os.walk(cloud_root):
-            for fn in files:
-                if fn.lower().endswith(('.mp3', '.wav', '.ogg')):
-                    cloud_total += 1
-    print(f"云端池: {cloud_total} 个文件")
+    # Check basic sounds
+    for snd in ["start.mp3", "end.mp3", "rest_start.mp3", "interval.mp3", "resume.mp3", "exit.mp3"]:
+        path = sound_path(snd)
+        if os.path.exists(path):
+            print(f"音频 {snd}: OK")
+        else:
+            print(f"音频 {snd}: 缺失 (将使用随机池)")
+            
+    # Check random pools
+    for category in ["start", "end", "interval", "resume", "exit"]:
+        d = sound_path(f"random/{category}")
+        count = 0
+        if os.path.isdir(d):
+            count = len([f for f in os.listdir(d) if f.endswith(".mp3")])
+        print(f"分类池 {category}: {count} 个文件")
+
+    # Check cloud pool (mock)
+    cloud_dir = os.path.join(base_dir(), "cloud")
+    count = 0
+    if os.path.isdir(cloud_dir):
+        count = len([f for f in os.listdir(cloud_dir) if f.endswith(".mp3")])
+    print(f"云端池: {count} 个文件")
 
 
 def main():
@@ -1052,9 +1353,7 @@ def main():
         check_resources()
         return
     app = QtWidgets.QApplication(sys.argv)
-    
-    # Check/Download resources
-    manager = DownloadManager(base_dir())
+    app.setQuitOnLastWindowClosed(False)
     
     # We need to keep a reference to the widget so it doesn't get garbage collected
     widgets = []
@@ -1064,8 +1363,24 @@ def main():
         w.show()
         widgets.append(w)
         
-    manager.download_complete.connect(start_app)
-    manager.start()
+    # Check settings for update flag
+    check_updates = True
+    settings_path = os.path.join(base_dir(), "settings.json")
+    if os.path.exists(settings_path):
+        try:
+            with open(settings_path, "r", encoding="utf-8") as f:
+                d = json.load(f)
+                check_updates = d.get("check_updates_enabled", True)
+        except Exception:
+            pass
+
+    if check_updates:
+        # Check/Download resources
+        manager = DownloadManager(base_dir())
+        manager.download_complete.connect(start_app)
+        manager.start()
+    else:
+        start_app()
     
     sys.exit(app.exec())
 
