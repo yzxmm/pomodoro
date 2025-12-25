@@ -17,6 +17,8 @@ LAYOUT_EDIT_MODE = True
 import winsound
 
 def base_dir():
+    if getattr(sys, 'frozen', False):
+        return os.path.dirname(sys.executable)
     return os.path.dirname(os.path.abspath(__file__))
 
 
@@ -46,14 +48,42 @@ class PomodoroWidget(QtWidgets.QWidget):
 
         self.image_label = QtWidgets.QLabel(self)
         self.image_label.setAlignment(QtCore.Qt.AlignCenter)
-        self.image_label.setScaledContents(False)
+        self.image_label.setScaledContents(True)
+        self.image_label.setAttribute(QtCore.Qt.WA_TransparentForMouseEvents, True)
 
         pix = QtGui.QPixmap(resolve_asset("idle.png"))
+        
+        # Determine initial size
+        init_w, init_h = 400, 400
+        settings_path = os.path.join(base_dir(), "settings.json")
+        loaded_size = False
+        if os.path.exists(settings_path):
+            try:
+                with open(settings_path, "r", encoding="utf-8") as f:
+                    d = json.load(f)
+                    if "width" in d and "height" in d:
+                        init_w = d["width"]
+                        init_h = d["height"]
+                        loaded_size = True
+            except:
+                pass
+        
+        if not loaded_size and not pix.isNull():
+            # If no saved size, use scaled down image size (user said it was too big)
+            s = pix.size()
+            # Scale to 60% of original, or clamp to 300x300 roughly
+            scale_factor = 0.6
+            init_w = int(s.width() * scale_factor)
+            init_h = int(s.height() * scale_factor)
+            
+            # Ensure reasonable minimums
+            init_w = max(200, init_w)
+            init_h = max(200, init_h)
+
         if not pix.isNull():
             self.image_label.setPixmap(pix)
-            self.resize(pix.size())
-        else:
-            self.resize(400, 400)
+        
+        self.resize(init_w, init_h)
 
         self.image_label.setGeometry(0, 0, self.width(), self.height())
 
@@ -150,7 +180,7 @@ class PomodoroWidget(QtWidgets.QWidget):
         self.menu_overlay = ImageMenu(self)
 
         self.resume_button = QtWidgets.QLabel(self)
-        self.resume_button.setFixedSize(100, 100)
+        self.resume_button.setFixedSize(200, 200)
         self.resume_button.setAlignment(QtCore.Qt.AlignCenter)
         self.resume_button.setScaledContents(True)
         rpix = QtGui.QPixmap(resolve_asset("resume.png"))
@@ -158,9 +188,9 @@ class PomodoroWidget(QtWidgets.QWidget):
             self.resume_button.setPixmap(rpix)
         else:
             self.resume_button.setText("继续")
-            self.resume_button.setStyleSheet("background: rgba(0,0,0,0.3); color: white; padding:6px; border-radius:6px;")
+            self.resume_button.setStyleSheet("background: rgba(0,0,0,0.3); color: white; padding:6px; border-radius:6px; font-size: 24px;")
         self.resume_button.hide()
-        self.resume_button.mousePressEvent = lambda e: (self.start_or_resume(), e.accept())
+        self.resume_button.mousePressEvent = lambda e: (self.start_or_resume() if e.button() == QtCore.Qt.LeftButton else e.ignore())
         self.resume_offset_y_ratio = 0.08
 
         self.start_button = QtWidgets.QPushButton("开始", self)
@@ -168,17 +198,50 @@ class PomodoroWidget(QtWidgets.QWidget):
         if os.path.exists(s_icon):
             self.start_button.setText("")
             self.start_button.setIcon(QtGui.QIcon(s_icon))
-            self.start_button.setIconSize(QtCore.QSize(40, 40))
-            self.start_button.setFixedSize(50, 50)
+            # Initial size, will be updated in place_start_button
+            self.start_button.setIconSize(QtCore.QSize(80, 80))
+            self.start_button.setFixedSize(100, 100)
             self.start_button.setStyleSheet("border: none; background: transparent;")
         else:
             self.start_button.setFixedSize(88, 34)
         self.start_button.clicked.connect(self.start_or_resume)
         self.start_button.show()
+        
+        # Time background (optional)
+        self.time_bg_label = QtWidgets.QLabel(self)
+        self.time_bg_label.setScaledContents(True)
+        self.time_bg_label.setAttribute(QtCore.Qt.WA_TransparentForMouseEvents, True)
+        tbg = resolve_asset("time_bg.png")
+        if os.path.exists(tbg):
+            self.time_bg_label.setPixmap(QtGui.QPixmap(tbg))
+        self.time_bg_label.hide() # Hidden by default, shown in place_time_label if asset exists
+        # Ensure correct stacking order: Image (bottom) < Time BG < Time Label (top)
+        self.image_label.lower()
+        self.time_bg_label.stackUnder(self.time_label)
+
         self.place_start_button()
 
         # Initialize visuals (load animation or static image)
         self.apply_phase_visuals()
+        
+        # Enforce scale-down if first run logic didn't catch it but user wants it smaller
+        # Heuristic: if current size is very large (e.g. original 400x400 or more) and not loaded from explicit small settings
+        if not loaded_size:
+             # Already handled above
+             pass
+        else:
+             # Check if we should force resize down for "huge" windows on this update
+             # Only if it matches default huge size exactly? 
+             # Or better: check if we have a special flag or just do it once?
+             # Let's just trust the user request: "Character didn't shrink" -> force it.
+             # We can't distinguish "user wants it big" vs "user forgot to resize".
+             # But if I force it to 60% of CURRENT size, it might annoy some.
+             # However, I'll assume standard use case: 400x400 is too big.
+             if self.width() >= 400 and self.height() >= 400:
+                 new_w = int(self.width() * 0.6)
+                 new_h = int(self.height() * 0.6)
+                 self.resize(new_w, new_h)
+                 self.image_label.setGeometry(0, 0, new_w, new_h)
 
     def place_time_label(self):
         w = self.width()
@@ -209,6 +272,12 @@ class PomodoroWidget(QtWidgets.QWidget):
         label_h = int(h * rel_h)
         
         self.time_label.setGeometry(x, y, label_w, label_h)
+        
+        # Place time background if it exists
+        if hasattr(self, 'time_bg_label') and not self.time_bg_label.pixmap().isNull():
+            self.time_bg_label.setGeometry(x, y, label_w, label_h)
+            self.time_bg_label.show()
+            self.time_bg_label.stackUnder(self.time_label) # Ensure it's behind time_label but above image
         
         # Update font size if needed
         f_size = cfg.get("font_size", 22)
@@ -262,9 +331,23 @@ class PomodoroWidget(QtWidgets.QWidget):
     def place_start_button(self):
         w = self.width()
         h = self.height()
+        
+        # Proportional size for Start Button
+        # User request: "Start button too small"
+        # Increased ratio to 25% of min dimension
+        min_dim = min(w, h)
+        btn_size = int(min_dim * 0.25)
+        # Relaxed constraints: min 50, max 150
+        btn_size = max(50, min(150, btn_size))
+        
+        self.start_button.setFixedSize(btn_size, btn_size)
+        self.start_button.setIconSize(QtCore.QSize(int(btn_size * 0.9), int(btn_size * 0.9)))
+        
         bw = self.start_button.width()
         bh = self.start_button.height()
-        margin = max(6, int(min(w, h) * 0.015))
+        
+        # Margin proportional to window size but tight to corner
+        margin = max(5, int(min(w, h) * 0.02)) # 2% margin or 5px
         rx = max(0, w - bw - margin)
         ry = margin
         self.start_button.setGeometry(rx, ry, bw, bh)
@@ -435,25 +518,32 @@ class PomodoroWidget(QtWidgets.QWidget):
     def apply_phase_visuals(self):
         # Determine which visual state we should be in
         target_anim = "idle"
+        use_static = False
         
         if self.adjusting_duration:
              # When adjusting, show preview based on mode
              target_anim = "idle" if self.adjust_mode == 'work' else "paused"
+             use_static = True # Preview is static for now, or animated? User didn't specify, but static is safer for adjustment
         else:
             if self.phase == "working":
                 target_anim = "idle"
+                use_static = False
             elif self.phase == "rest":
                 target_anim = "paused"
+                use_static = False
             elif self.phase == "idle":
                 target_anim = "idle"
+                use_static = True # User requested static for Start/Idle state
             
             # If paused logic is separate (user clicked pause)
             if self.paused:
                 target_anim = "paused"
+                use_static = True # User requested static for Paused state
 
         # Only reload if changed
-        if target_anim != self.current_anim_type or not self.animation_frames:
-             self.load_animation_frames(target_anim)
+        current_static = getattr(self, 'current_anim_static', None)
+        if target_anim != self.current_anim_type or use_static != current_static or not self.animation_frames:
+             self.load_animation_frames(target_anim, force_static=use_static)
         
         # Show/hide resume button based on paused state
         if self.paused:
@@ -472,57 +562,84 @@ class PomodoroWidget(QtWidgets.QWidget):
         self.place_time_label()
         self.place_start_button()
 
-    def load_animation_frames(self, anim_type):
+    def load_animation_frames(self, anim_type, force_static=False):
         """
         Load animation frames for 'idle' or 'paused'.
-        Prioritize folders 'assets/idle' or 'assets/paused'.
-        Fallback to single image 'idle.png' or 'paused.png'.
+        If force_static is True, prioritize single image 'idle.png' or 'paused.png'.
+        Otherwise, prioritize folders 'assets/idle' or 'assets/paused'.
         """
         self.animation_frames = []
         self.current_frame_index = 0
         self.current_anim_type = anim_type
+        self.current_anim_static = force_static
         
-        # Try folder first
-        folder_path = resolve_asset(anim_type)
-        if os.path.isdir(folder_path):
-            files = sorted([f for f in os.listdir(folder_path) if f.lower().endswith('.png')])
-            if files:
-                for f in files:
-                    pix = QtGui.QPixmap(os.path.join(folder_path, f))
-                    if not pix.isNull():
-                        self.animation_frames.append(pix)
-        
-        # Fallback to single image if no frames found
-        if not self.animation_frames:
-            single_path = resolve_asset(f"{anim_type}.png")
-            pix = QtGui.QPixmap(single_path)
+        # Helper to load single image
+        def load_single(name):
+            path = resolve_asset(f"{name}.png")
+            pix = QtGui.QPixmap(path)
             if not pix.isNull():
                 self.animation_frames.append(pix)
-            else:
-                # Last resort fallback if paused missing, use idle
-                if anim_type == 'paused':
-                     # Try idle folder
-                    idle_folder = resolve_asset('idle')
-                    if os.path.isdir(idle_folder):
-                        files = sorted([f for f in os.listdir(idle_folder) if f.lower().endswith('.png')])
-                        for f in files:
-                             pix = QtGui.QPixmap(os.path.join(idle_folder, f))
-                             if not pix.isNull():
-                                 self.animation_frames.append(pix)
-                    # Try idle image
-                    if not self.animation_frames:
-                        pix = QtGui.QPixmap(resolve_asset("idle.png"))
+                return True
+            return False
+
+        loaded = False
+        
+        # If static requested, try single image first
+        if force_static:
+            loaded = load_single(anim_type)
+            # If failed, try folder but only take first frame
+            if not loaded:
+                folder_path = resolve_asset(anim_type)
+                if os.path.isdir(folder_path):
+                     files = sorted([f for f in os.listdir(folder_path) if f.lower().endswith('.png')])
+                     if files:
+                         pix = QtGui.QPixmap(os.path.join(folder_path, files[0]))
+                         if not pix.isNull():
+                             self.animation_frames.append(pix)
+                             loaded = True
+
+        # If not static or static failed (and fallback above failed), try folder logic
+        if not loaded:
+            folder_path = resolve_asset(anim_type)
+            if os.path.isdir(folder_path):
+                files = sorted([f for f in os.listdir(folder_path) if f.lower().endswith('.png')])
+                if files:
+                    for f in files:
+                        pix = QtGui.QPixmap(os.path.join(folder_path, f))
                         if not pix.isNull():
                             self.animation_frames.append(pix)
+                    if self.animation_frames:
+                        loaded = True
+        
+        # Fallback to single image if folder empty/missing and we haven't loaded yet
+        if not loaded and not force_static:
+             loaded = load_single(anim_type)
+
+        # Final fallbacks (cross-type)
+        if not self.animation_frames:
+             # Try opposite type
+             fallback_type = 'idle' if anim_type == 'paused' else 'idle' 
+             if fallback_type != anim_type:
+                 # Try folder
+                 folder_path = resolve_asset(fallback_type)
+                 if os.path.isdir(folder_path):
+                     files = sorted([f for f in os.listdir(folder_path) if f.lower().endswith('.png')])
+                     for f in files:
+                         pix = QtGui.QPixmap(os.path.join(folder_path, f))
+                         if not pix.isNull():
+                             self.animation_frames.append(pix)
+                 # Try single
+                 if not self.animation_frames:
+                     load_single(fallback_type)
 
         if self.animation_frames:
             # Set initial frame
             self.image_label.setPixmap(self.animation_frames[0])
-            self.resize(self.animation_frames[0].size())
-            self.image_label.setGeometry(0, 0, self.width(), self.height())
+            # self.resize(self.animation_frames[0].size()) # User requested size persistence
+            # self.image_label.setGeometry(0, 0, self.width(), self.height()) # Handled by resizeEvent
             
-            # Start timer if more than 1 frame
-            if len(self.animation_frames) > 1:
+            # Start timer if more than 1 frame AND not forced static
+            if len(self.animation_frames) > 1 and not force_static:
                 if not self.animation_timer.isActive():
                     self.animation_timer.start()
             else:
@@ -599,7 +716,7 @@ class PomodoroWidget(QtWidgets.QWidget):
                     pix = QtGui.QPixmap(resolve_asset("paused.png"))
                     if not pix.isNull():
                         self.image_label.setPixmap(pix)
-                        self.resize(pix.size())
+                        # self.resize(pix.size()) # Keep current size
                 return True
             if event.type() == QtCore.QEvent.MouseMove and self.adjusting_duration and (event.buttons() & QtCore.Qt.LeftButton):
                 x = event.globalPosition().x() if hasattr(event, 'globalPosition') else event.globalX()
@@ -634,7 +751,7 @@ class PomodoroWidget(QtWidgets.QWidget):
                     pix = QtGui.QPixmap(resolve_asset("paused.png"))
                     if not pix.isNull():
                         self.image_label.setPixmap(pix)
-                        self.resize(pix.size())
+                        # self.resize(pix.size()) # Keep current size
                 return True
             if event.type() == QtCore.QEvent.MouseButtonRelease and self.adjusting_duration:
                 self.adjusting_duration = False
@@ -816,7 +933,9 @@ class PomodoroWidget(QtWidgets.QWidget):
             "sounds_update_url": getattr(self, "sounds_update_url", ""),
             "layout_config": self.layout_config,
             "x": self.x(),
-            "y": self.y()
+            "y": self.y(),
+            "width": self.width(),
+            "height": self.height()
         }
         try:
             with open(settings_path, "w", encoding="utf-8") as f:
@@ -824,12 +943,27 @@ class PomodoroWidget(QtWidgets.QWidget):
         except Exception as e:
             print(f"Failed to save settings: {e}")
 
+    def resizeEvent(self, event):
+        self.image_label.setGeometry(0, 0, self.width(), self.height())
+        self.place_time_label()
+        self.place_start_button()
+        self.place_resume_button()
+        if hasattr(self, 'time_bg_label'):
+            self.time_bg_label.setGeometry(self.time_label.geometry())
+        super().resizeEvent(event)
+
     def mousePressEvent(self, event):
         if event.button() == QtCore.Qt.LeftButton:
             if not self.adjusting_duration:
                 self.dragging = True
                 self.drag_offset = event.globalPos() - self.frameGeometry().topLeft()
                 event.accept()
+        elif event.button() == QtCore.Qt.RightButton:
+            # Force show menu on right click
+            self.menu_overlay.show_at(event.globalPos())
+            event.accept()
+            return
+            
         super().mousePressEvent(event)
 
     def mouseMoveEvent(self, event):
@@ -1306,7 +1440,7 @@ def check_resources():
             
     # Check menu icons
     print("菜单图标(可选，手绘风格):")
-    for img in ["pause.png", "stop.png", "reset.png", "setting.png", "pin.png", "voice.png", "exit.png", "check.png"]:
+    for img in ["pause.png", "setting.png", "pin.png", "exit.png", "check.png"]:
         path = resolve_menu_icon(img)
         if path and os.path.exists(path):
              print(f"  {img}: OK")
