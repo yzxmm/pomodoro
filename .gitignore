@@ -1,6 +1,8 @@
 # Build outputs
 build/
 dist/
+PomodoroRelease/
+*.spec
 cloud/
 
 # Python

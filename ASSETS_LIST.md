@@ -12,9 +12,9 @@ This document lists all the resource files required for the official release. Pl
 | `paused.png` | 图片 | **暂停**状态静帧 | 400x400+ | 倒计时暂停时显示 |
 | `idle/` | **文件夹** | **工作**状态动画序列 | 400x400+ | 放入 `0.png`... (倒计时进行中播放) |
 | `paused/` | **文件夹** | **休息**状态动画序列 | 400x400+ | 放入 `0.png`... (休息时间进行中播放) |
-| `resume.png` | 图片 | **继续按钮** (暂停时显示) | 200x200 | 显示在人物中间 |
-| `start_btn.png` | 图片 | **开始按钮** (右上角) | 窗口短边的35% | 自动缩放，建议原图200x200 |
-| `time_bg.png` | 图片 | **时间背景** | 建议 150x40+ | 显示在时间数字下方 |
+| `resume.png` | 图片 | **继续按钮** (暂停时显示) | 窗口短边的30% | 显示在右上角，用于暂停后恢复 |
+| `start_btn.png` | 图片 | **开始按钮** (右上角) | 窗口短边的37.5% | 自动缩放，建议原图200x200 |
+| `time_bg.png` | 图片 | **时间背景** | 建议 150x40+ | 显示在时间数字下方，**随字体大小缩放** |
 
 ## 2. 菜单图标 (Menu Icons) - 手绘风格
 **存放目录 / Directory:** `assets/menu/`
@@ -42,6 +42,7 @@ This document lists all the resource files required for the official release. Pl
 | :--- | :--- | :--- | :--- |
 | `0.png` ~ `9.png` | 数字 0-9 | 高度约 80px | PNG透明背景 |
 | `colon.png` | 冒号 (:) | 与数字高度匹配 | PNG透明背景 |
+| `infinite.png` | 无穷符号 (∞) | 与数字高度匹配 | PNG透明背景 (用于本轮结束自动退出时的休息时间显示) |
 
 ## 4. 核心音效 (Core Sounds)
 **存放目录 / Directory:** `sounds/`

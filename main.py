@@ -38,6 +38,342 @@ def resolve_asset(name):
     return parent if os.path.exists(parent) else local
 
 
+
+class TimerWidget(QtWidgets.QWidget):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowFlags(QtCore.Qt.Window | QtCore.Qt.FramelessWindowHint | QtCore.Qt.Tool)
+        self.setAttribute(QtCore.Qt.WA_TranslucentBackground, True)
+        self.setFocusPolicy(QtCore.Qt.StrongFocus)
+        
+        self.main_window = parent
+        
+        # Time Label
+        self.time_label = QtWidgets.QLabel(self)
+        self.time_label.setText("00:00")
+        self.time_label.setAlignment(QtCore.Qt.AlignCenter)
+        font = QtGui.QFont()
+        font.setPointSize(22)
+        font.setBold(True)
+        self.time_label.setFont(font)
+        self.time_label.setStyleSheet("color: black;")
+        
+        # Time Background
+        self.time_bg_label = QtWidgets.QLabel(self)
+        self.time_bg_label.setScaledContents(True)
+        self.time_bg_label.setAttribute(QtCore.Qt.WA_TransparentForMouseEvents, True)
+        tbg = resolve_asset("time_bg.png")
+        if os.path.exists(tbg):
+            self.time_bg_label.setPixmap(QtGui.QPixmap(tbg))
+        self.time_bg_label.hide()
+        self.time_bg_label.stackUnder(self.time_label)
+
+        # Digit Container
+        self.digit_container = QtWidgets.QWidget(self)
+        self.digit_layout = QtWidgets.QHBoxLayout(self.digit_container)
+        self.digit_layout.setContentsMargins(0, 0, 0, 0)
+        self.digit_layout.setSpacing(0)
+        self.digit_labels = [QtWidgets.QLabel(self.digit_container) for _ in range(5)]
+        for lbl in self.digit_labels:
+            lbl.setAlignment(QtCore.Qt.AlignCenter)
+            lbl.setScaledContents(False)
+            self.digit_layout.addWidget(lbl)
+        self.digit_container.hide()
+        
+        self.dragging = False
+        self.drag_offset = QtCore.QPoint()
+        
+        # Layout Config
+        self.font_size = 22
+        self.adjusting_duration = False
+        
+        # Initial Resize
+        self.update_layout()
+
+    def update_layout(self):
+        # Update font
+        font = self.time_label.font()
+        if font.pointSize() != self.font_size:
+            font.setPointSize(self.font_size)
+            self.time_label.setFont(font)
+        
+        self.time_label.adjustSize()
+        w = self.time_label.width()
+        h = self.time_label.height()
+        
+        # Ensure minimum size
+        w = max(w, 50)
+        h = max(h, 20)
+        
+        self.resize(w, h)
+        self.time_label.setGeometry(0, 0, w, h)
+        
+        if not self.time_bg_label.pixmap().isNull():
+            self.time_bg_label.setGeometry(0, 0, w, h)
+            self.time_bg_label.show()
+            
+        self.digit_container.setGeometry(0, 0, w, h)
+
+    def digits_available(self):
+        local_dir = os.path.join(base_dir(), "assets", "digits")
+        parent_dir = os.path.join(os.path.dirname(base_dir()), "assets", "digits")
+        check_dir = local_dir if os.path.exists(local_dir) else parent_dir
+        return os.path.exists(os.path.join(check_dir, "0.png")) and os.path.exists(os.path.join(check_dir, "colon.png"))
+
+    def digit_path(self, ch):
+        name = "colon.png" if ch == ":" else f"{ch}.png"
+        local = os.path.join(base_dir(), "assets", "digits", name)
+        if os.path.exists(local):
+            return local
+        parent = os.path.join(os.path.dirname(base_dir()), "assets", "digits", name)
+        return parent if os.path.exists(parent) else local
+
+    def set_time_text(self, text):
+        if self.digits_available():
+            self.time_label.setText(text)
+            self.time_label.hide()
+            self.show_digit_time(text)
+        else:
+            self.digit_container.hide()
+            self.time_label.show()
+            self.time_label.setText(text)
+            self.update_layout() # Resize window to fit text
+
+    def show_digit_time(self, text):
+        if text == "INF":
+            p = resolve_asset("digits/infinite.png")
+            if not os.path.exists(p):
+                 p = self.digit_path("infinite") 
+            
+            pm = QtGui.QPixmap(p)
+            if pm.isNull():
+                 self.digit_container.hide()
+                 self.time_label.setText("∞")
+                 self.time_label.show()
+                 self.update_layout()
+                 return
+
+            for lbl in self.digit_labels:
+                lbl.hide()
+            
+            lbl = self.digit_labels[0]
+            lbl.show()
+            lbl.setPixmap(pm)
+            lbl.setScaledContents(True)
+            
+            container_h = self.height()
+            container_w = self.width()
+            
+            aspect = pm.width() / max(1, pm.height())
+            target_h = int(container_h * 0.8)
+            target_w = int(target_h * aspect)
+            
+            if target_w > container_w:
+                target_w = container_w
+                target_h = int(target_w / aspect)
+            
+            lbl.setFixedSize(target_w, target_h)
+            
+            self.digit_layout.setContentsMargins(
+                (container_w - target_w) // 2, 
+                (container_h - target_h) // 2, 
+                0, 0
+            )
+            self.digit_container.show()
+            self.digit_container.raise_()
+            return
+
+        chars = [text[0], text[1], ":", text[3], text[4]]
+        pixmaps = []
+        for ch in chars:
+            p = self.digit_path(ch)
+            pm = QtGui.QPixmap(p)
+            pixmaps.append(pm if not pm.isNull() else QtGui.QPixmap())
+        
+        container_w = self.width()
+        container_h = self.height()
+        
+        temp_height = container_h
+        total_w_at_full_height = 0
+        for pm in pixmaps:
+            if not pm.isNull():
+                total_w_at_full_height += pm.width() * (temp_height / max(1, pm.height()))
+            else:
+                total_w_at_full_height += temp_height * 0.5
+        
+        pad_px = temp_height * -0.04
+        total_w_at_full_height += pad_px * 5
+        
+        safe_container_w = container_w * 0.95
+        
+        if total_w_at_full_height > safe_container_w:
+            scale_factor = safe_container_w / total_w_at_full_height
+            final_height = int(temp_height * scale_factor)
+        else:
+            final_height = temp_height
+            
+        final_height = max(1, int(final_height))
+        
+        scaled = []
+        for pm in pixmaps:
+            if pm.isNull():
+                scaled.append(QtGui.QPixmap())
+            else:
+                scaled.append(pm.scaledToHeight(final_height, QtCore.Qt.SmoothTransformation))
+                
+        for i, spm in enumerate(scaled):
+            self.digit_labels[i].setScaledContents(False)
+            self.digit_labels[i].setPixmap(spm)
+            self.digit_labels[i].setFixedHeight(final_height)
+            self.digit_labels[i].show()
+            if not spm.isNull():
+                self.digit_labels[i].setFixedWidth(spm.width())
+            else:
+                self.digit_labels[i].setFixedWidth(max(1, int(final_height * 0.5)))
+                
+        self.digit_layout.setSpacing(int(final_height * -0.04))
+        self.digit_layout.setContentsMargins(0, 0, 0, 0)
+        
+        self.digit_container.show()
+        self.digit_container.raise_()
+
+    def mousePressEvent(self, event):
+        if event.button() == QtCore.Qt.LeftButton:
+            # Control + Drag = Move Timer Position (Independent from character)
+            # Default Drag = Adjust Time (Work/Rest duration)
+            
+            # The user requested: "Time card needs Control to be dragged, now it drags directly"
+            # This implies the DEFAULT behavior should NOT be moving the widget.
+            # So we swap the logic:
+            # Control + Drag = Move Widget Position
+            # No Modifier (Default) = Adjust Time
+            
+            if event.modifiers() & QtCore.Qt.ControlModifier:
+                 # Control pressed -> Move the widget
+                 self.dragging = True
+                 self.drag_offset = event.globalPosition().toPoint() - self.pos()
+            else:
+                 # No modifier -> Adjust Time duration
+                 # Only allowed if idle or paused
+                 can_adjust = False
+                 if self.main_window:
+                     if self.main_window.phase == "idle" or self.main_window.paused:
+                         can_adjust = True
+                 
+                 if can_adjust:
+                     self.adjusting_duration = True
+                     self.drag_start_pos = event.globalPosition().toPoint()
+                     if self.main_window:
+                         self.main_window.adjusting_duration = True
+                         
+                         # Determine mode
+                         self.adjust_mode = getattr(self.main_window, 'edit_mode', 'work')
+                         if self.adjust_mode == 'rest':
+                             self.duration_start = self.main_window.rest_duration
+                             # Visual feedback for rest
+                             self.main_window.exit_on_work_end = False # Prevent exit during adjustment
+                             pix = QtGui.QPixmap(resolve_asset("paused.png"))
+                             if not pix.isNull():
+                                 self.main_window.image_label.setPixmap(pix)
+                                 self.main_window.image_label.resize(self.main_window.width(), self.main_window.height())
+                         else:
+                             self.duration_start = self.main_window.work_duration
+            
+            event.accept()
+            if self.main_window:
+                self.main_window.setFocus()
+                
+        # Forward right click to main window for menu
+        elif event.button() == QtCore.Qt.RightButton:
+            if self.main_window:
+                self.main_window.menu_overlay.show_at(event.globalPosition().toPoint())
+                event.accept()
+
+    def mouseMoveEvent(self, event):
+        if self.dragging:
+            self.move(event.globalPosition().toPoint() - self.drag_offset)
+            event.accept()
+            
+        elif getattr(self, 'adjusting_duration', False) and self.main_window:
+            diff = event.globalPosition().toPoint() - self.drag_start_pos
+            dx = diff.x()
+            dy = diff.y()
+            ax = abs(dx)
+            ay = abs(dy)
+            
+            deadzone_sec = 20
+            deadzone_min = 10
+            
+            eff_ax = max(0, ax - deadzone_sec)
+            eff_ay = max(0, ay - deadzone_min)
+            
+            if eff_ax < eff_ay * 0.75:
+                sec_delta = 0
+            else:
+                sec_delta = int((eff_ax / 40) ** 1.2) * (1 if dx > 0 else -1)
+                
+            min_delta = int((eff_ay / 60) ** 1.1) * (1 if dy > 0 else -1)
+            
+            new_dur = int(self.duration_start + min_delta * 60 + sec_delta)
+            
+            if self.adjust_mode == 'work':
+                new_dur = max(300, min(3600, new_dur))
+                if new_dur != self.main_window.work_duration:
+                    self.main_window.work_duration = new_dur
+                    self.main_window.set_time_text(self.main_window.format_time(new_dur))
+            else:
+                new_dur = max(30, min(900, new_dur))
+                if new_dur != self.main_window.rest_duration:
+                    self.main_window.rest_duration = new_dur
+                    self.main_window.set_time_text(self.main_window.format_time(new_dur))
+            
+            event.accept()
+            
+    def mouseReleaseEvent(self, event):
+        if event.button() == QtCore.Qt.LeftButton:
+            if self.dragging:
+                self.dragging = False
+                if self.main_window:
+                    offset = self.pos() - self.main_window.pos()
+                    self.main_window.layout_config['timer_offset_x'] = offset.x()
+                    self.main_window.layout_config['timer_offset_y'] = offset.y()
+                    self.main_window.save_settings()
+            
+            if self.adjusting_duration:
+                self.adjusting_duration = False
+                if self.main_window:
+                    self.main_window.adjusting_duration = False
+                    self.main_window.save_settings()
+                    # Restore visuals
+                    self.main_window.apply_phase_visuals()
+            
+            event.accept()
+
+    def wheelEvent(self, event):
+        # Resize timer font
+        if event.modifiers() & QtCore.Qt.ControlModifier:
+            delta = event.angleDelta().y()
+            if delta > 0:
+                self.font_size = min(120, self.font_size + 2)
+            else:
+                self.font_size = max(8, self.font_size - 2)
+            
+            self.update_layout()
+            if self.main_window:
+                self.main_window.save_settings()
+            event.accept()
+        else:
+            # Pass other wheel events to main window (e.g. volume? or char resize?)
+            # But main window handles char resize via Shift+Wheel.
+            # If we want to support that while hovering timer:
+            if self.main_window:
+                self.main_window.wheelEvent(event)
+
+    def keyPressEvent(self, event):
+        if self.main_window:
+            self.main_window.keyPressEvent(event)
+
+
 class PomodoroWidget(QtWidgets.QWidget):
     def __init__(self):
         super().__init__()
@@ -45,6 +381,7 @@ class PomodoroWidget(QtWidgets.QWidget):
         self.setWindowFlags(QtCore.Qt.FramelessWindowHint | QtCore.Qt.Window)
         self.setAttribute(QtCore.Qt.WA_TranslucentBackground, True)
         self.setWindowFlag(QtCore.Qt.WindowStaysOnTopHint, True)
+        self.setFocusPolicy(QtCore.Qt.StrongFocus)
 
         self.image_label = QtWidgets.QLabel(self)
         self.image_label.setAlignment(QtCore.Qt.AlignCenter)
@@ -54,9 +391,13 @@ class PomodoroWidget(QtWidgets.QWidget):
         pix = QtGui.QPixmap(resolve_asset("idle.png"))
         
         # Determine initial size
+        # Adaptive Size Logic:
+        # If settings exist, use them.
+        # If not, calculate based on screen resolution (e.g., 35% of screen height).
         init_w, init_h = 400, 400
         settings_path = os.path.join(base_dir(), "settings.json")
         loaded_size = False
+        
         if os.path.exists(settings_path):
             try:
                 with open(settings_path, "r", encoding="utf-8") as f:
@@ -68,40 +409,39 @@ class PomodoroWidget(QtWidgets.QWidget):
             except:
                 pass
         
-        if not loaded_size and not pix.isNull():
-            # If no saved size, use scaled down image size (user said it was too big)
-            s = pix.size()
-            # Scale to 60% of original, or clamp to 300x300 roughly
-            scale_factor = 0.6
-            init_w = int(s.width() * scale_factor)
-            init_h = int(s.height() * scale_factor)
-            
-            # Ensure reasonable minimums
-            init_w = max(200, init_w)
-            init_h = max(200, init_h)
-
+        if not loaded_size:
+            # Smart Adaptive Sizing
+            screen = QtWidgets.QApplication.primaryScreen()
+            if screen:
+                scr_rect = screen.availableGeometry()
+                # Target height: 35% of screen height
+                target_h = int(scr_rect.height() * 0.35)
+                target_h = max(200, min(800, target_h)) # Clamp reasonable limits
+                
+                # Calculate width based on aspect ratio
+                if not pix.isNull():
+                    aspect = pix.width() / max(1, pix.height())
+                    target_w = int(target_h * aspect)
+                else:
+                    target_w = target_h
+                
+                init_w, init_h = target_w, target_h
+        
         if not pix.isNull():
             self.image_label.setPixmap(pix)
         
         self.resize(init_w, init_h)
 
         self.image_label.setGeometry(0, 0, self.width(), self.height())
-
-        self.time_label = QtWidgets.QLabel(self)
-        self.time_label.setText("00:00")
-        self.time_label.setAlignment(QtCore.Qt.AlignCenter)
-        font = QtGui.QFont()
-        font.setPointSize(22)
-        font.setBold(True)
-        self.time_label.setFont(font)
-        self.time_label.setStyleSheet("color: black;")
+        
+        # Initialize TimerWidget
+        self.timer_widget = TimerWidget(self)
+        self.timer_widget.show()
         
         # Layout config
         self.layout_config = {
-            "time_x": 0.3,  # center
-            "time_y": 0.61,
-            "time_w": 0.39,
-            "time_h": 0.11,
+            "timer_offset_x": 100,
+            "timer_offset_y": 100,
             "font_size": 22
         }
         
@@ -115,6 +455,7 @@ class PomodoroWidget(QtWidgets.QWidget):
         self.always_on_top = True
         self.adjusting_duration = False
         self.adjust_mode = None  # 'work' or 'rest'
+        self.edit_mode = 'work'
         self.drag_start_x = 0
         self.drag_start_y = 0
         self.duration_start = self.work_duration
@@ -151,27 +492,8 @@ class PomodoroWidget(QtWidgets.QWidget):
 
         self.load_settings()
 
-        self.time_label.installEventFilter(self)
-
         self.dragging = False
         self.drag_offset = QtCore.QPoint()
-        # digit image container for hand-written PNG digits (optional)
-        self.digit_container = QtWidgets.QWidget(self)
-        # self.digit_container.setAttribute(QtCore.Qt.WA_TransparentForMouseEvents, True)
-        self.digit_layout = QtWidgets.QHBoxLayout(self.digit_container)
-        self.digit_layout.setContentsMargins(0, 0, 0, 0)
-        self.digit_layout.setSpacing(0)
-        self.digit_labels = [QtWidgets.QLabel(self.digit_container) for _ in range(5)]
-        for lbl in self.digit_labels:
-            lbl.setAlignment(QtCore.Qt.AlignCenter)
-            lbl.setScaledContents(False)
-            self.digit_layout.addWidget(lbl)
-        self.digit_container.hide()
-        
-        # Install event filter on digit_container and its children to allow dragging
-        self.digit_container.installEventFilter(self)
-        for lbl in self.digit_labels:
-            lbl.installEventFilter(self)
 
         # 确保初始几何同步
         self.place_time_label()
@@ -207,17 +529,8 @@ class PomodoroWidget(QtWidgets.QWidget):
         self.start_button.clicked.connect(self.start_or_resume)
         self.start_button.show()
         
-        # Time background (optional)
-        self.time_bg_label = QtWidgets.QLabel(self)
-        self.time_bg_label.setScaledContents(True)
-        self.time_bg_label.setAttribute(QtCore.Qt.WA_TransparentForMouseEvents, True)
-        tbg = resolve_asset("time_bg.png")
-        if os.path.exists(tbg):
-            self.time_bg_label.setPixmap(QtGui.QPixmap(tbg))
-        self.time_bg_label.hide() # Hidden by default, shown in place_time_label if asset exists
-        # Ensure correct stacking order: Image (bottom) < Time BG < Time Label (top)
+        # Ensure correct stacking order
         self.image_label.lower()
-        self.time_bg_label.stackUnder(self.time_label)
 
         self.place_start_button()
 
@@ -244,101 +557,98 @@ class PomodoroWidget(QtWidgets.QWidget):
                  self.image_label.setGeometry(0, 0, new_w, new_h)
 
     def place_time_label(self):
-        w = self.width()
-        h = self.height()
-        
-        # Use config if available, fallback to defaults
+        # Update timer widget config if needed
         cfg = getattr(self, 'layout_config', {})
-        rel_x = cfg.get("time_x", 0.3)
-        rel_y = cfg.get("time_y", 0.61)
-        rel_w = cfg.get("time_w", 0.39)
-        rel_h = cfg.get("time_h", 0.11)
         
-        # Validate coordinates (prevent out of screen)
-        if rel_x < 0 or rel_x > 1 or rel_y < 0 or rel_y > 1:
-            rel_x = 0.3
-            rel_y = 0.61
-            rel_w = 0.39
-            rel_h = 0.11
-            # Update config with safe values
-            self.layout_config['time_x'] = rel_x
-            self.layout_config['time_y'] = rel_y
-            self.layout_config['time_w'] = rel_w
-            self.layout_config['time_h'] = rel_h
-        
-        x = int(w * rel_x)
-        y = int(h * rel_y)
-        label_w = int(w * rel_w)
-        label_h = int(h * rel_h)
-        
-        self.time_label.setGeometry(x, y, label_w, label_h)
-        
-        # Place time background if it exists
-        if hasattr(self, 'time_bg_label') and not self.time_bg_label.pixmap().isNull():
-            self.time_bg_label.setGeometry(x, y, label_w, label_h)
-            self.time_bg_label.show()
-            self.time_bg_label.stackUnder(self.time_label) # Ensure it's behind time_label but above image
-        
-        # Update font size if needed
+        # Restore font size
         f_size = cfg.get("font_size", 22)
-        font = self.time_label.font()
-        if font.pointSize() != f_size:
-            font.setPointSize(f_size)
-            self.time_label.setFont(font)
+        if self.timer_widget.font_size != f_size:
+            self.timer_widget.font_size = f_size
+            self.timer_widget.update_layout()
+            
+        # Position
+        off_x = cfg.get("timer_offset_x", 100)
+        off_y = cfg.get("timer_offset_y", 100)
         
-        # Auto-expand label width/height if text might clip, but respect layout config if it was manually set?
-        # Actually, let's just make sure the label is large enough to contain the text
-        if LAYOUT_EDIT_MODE:
-            self.time_label.adjustSize()
-            # Update w/h in config to match the new size relative to window
-            # But wait, adjustSize() might make it smaller if text is short (e.g. 00:00)
-            # We want to keep the box reasonably sized.
-            # Let's just update the geometry to be at least the calculated size, or use adjustSize logic
-            
-            # If we just resized font, the adjustSize will calculate needed rect
-            curr_geo = self.time_label.geometry()
-            # Update stored relative width/height so it persists
-            self.layout_config['time_w'] = curr_geo.width() / w
-            self.layout_config['time_h'] = curr_geo.height() / h
-        else:
-            # If edit mode is disabled, we must ensure the label is visible and large enough
-            # We trust the stored relative coordinates, but maybe force adjustSize for content?
-            # If we don't adjustSize, and font is large, it might clip.
-            # So let's force adjustSize to ensure visibility, then center it at the configured position?
-            # Or just rely on the stored geometry.
-            # If the user messed up the geometry in edit mode (e.g. made it 0x0), it would be hidden.
-            # Safety check:
-            if label_w < 10 or label_h < 10:
-                self.time_label.adjustSize()
-                new_geo = self.time_label.geometry()
-                self.time_label.setGeometry(x, y, new_geo.width(), new_geo.height())
-            
-        if hasattr(self, 'digit_container') and self.digit_container is not None:
-            self.digit_container.setGeometry(self.time_label.geometry())
-            # Re-render digits if they are active to match new size
-            if self.digits_available() and self.time_label.text():
-                self.show_digit_time(self.time_label.text())
+        # Ensure initial valid position if it was never set (e.g. first run with new code)
+        # If we migrated from relative, we might need to calculate it.
+        # But we replaced the config loading. If loading old config, it has time_x/time_y.
+        # We should migrate it.
+        if "timer_offset_x" not in cfg and "time_x" in cfg:
+            # Migrate
+            off_x = int(self.width() * cfg["time_x"])
+            off_y = int(self.height() * cfg["time_y"])
+            self.layout_config["timer_offset_x"] = off_x
+            self.layout_config["timer_offset_y"] = off_y
+        
+        self.timer_widget.move(self.x() + off_x, self.y() + off_y)
+
 
     def place_resume_button(self):
         w = self.width()
         h = self.height()
+        
+        # Resize to be small and in top-right (smaller than start button)
+        min_dim = min(w, h)
+        # User request: Increase 1.5x (from 0.15 -> 0.225), "can be even bigger" -> 0.30
+        btn_size = int(min_dim * 0.30)
+        btn_size = max(60, min(160, btn_size))
+        
+        self.resume_button.setFixedSize(btn_size, btn_size)
+        
         bw = self.resume_button.width()
         bh = self.resume_button.height()
-        rx = int((w - bw) / 2)
-        ry = max(0, int((h - bh) / 2 - h * self.resume_offset_y_ratio))
+        
+        # Place in top right, similar to start button
+        margin = max(5, int(min(w, h) * 0.02))
+        rx = max(0, w - bw - margin)
+        ry = margin
         self.resume_button.setGeometry(rx, ry, bw, bh)
+        self.resume_button.raise_()
+
+    def keyPressEvent(self, event):
+        if event.key() == QtCore.Qt.Key_Space and self.isActiveWindow():
+            if self.phase == "idle":
+                self.start_or_resume()
+            elif self.paused:
+                self.start_or_resume()
+            else:
+                # Working or Rest running -> Pause
+                self.pause_timer()
+            event.accept()
+            return
+
+        if event.key() == QtCore.Qt.Key_Alt:
+             # Only toggle if idle or paused, and window is active
+             if (self.phase == "idle" or self.paused) and self.isActiveWindow():
+                 # Toggle edit mode
+                 current_mode = getattr(self, 'edit_mode', 'work')
+                 self.edit_mode = 'rest' if current_mode == 'work' else 'work'
+                 
+                 # Update display immediately
+                 if self.edit_mode == 'rest':
+                     if self.exit_on_work_end:
+                         self.set_time_text("INF")
+                     else:
+                         self.set_time_text(self.format_time(self.rest_duration))
+                 else:
+                     self.set_time_text(self.format_time(self.work_duration))
+                 
+                 # Force update visuals (background image) to reflect mode
+                 self.apply_phase_visuals()
+
+        super().keyPressEvent(event)
 
     def place_start_button(self):
         w = self.width()
         h = self.height()
         
         # Proportional size for Start Button
-        # User request: "Start button too small"
-        # Increased ratio to 25% of min dimension
+        # User request: Increase 1.5x (from 0.25 -> 0.375)
         min_dim = min(w, h)
-        btn_size = int(min_dim * 0.25)
-        # Relaxed constraints: min 50, max 150
-        btn_size = max(50, min(150, btn_size))
+        btn_size = int(min_dim * 0.375)
+        # Relaxed constraints: min 75, max 225
+        btn_size = max(75, min(225, btn_size))
         
         self.start_button.setFixedSize(btn_size, btn_size)
         self.start_button.setIconSize(QtCore.QSize(int(btn_size * 0.9), int(btn_size * 0.9)))
@@ -361,6 +671,28 @@ class PomodoroWidget(QtWidgets.QWidget):
         super().resizeEvent(event)
 
     def wheelEvent(self, event):
+        # Shift+Wheel to resize window
+        if event.modifiers() & QtCore.Qt.ShiftModifier:
+            delta = event.angleDelta().y()
+            # Scale factor: 10% per scroll step (usually 120 delta)
+            step = delta / 1200.0 
+            factor = 1.0 + step
+            
+            new_w = int(self.width() * factor)
+            new_h = int(self.height() * factor)
+            
+            # Clamp size
+            new_h = max(200, min(1200, new_h))
+            
+            # Calculate width based on aspect ratio of current image or just scale uniformly
+            # We want to maintain current aspect ratio of the window
+            ratio = self.width() / max(1, self.height())
+            new_w = int(new_h * ratio)
+            
+            self.resize(new_w, new_h)
+            event.accept()
+            return
+
         if LAYOUT_EDIT_MODE and (event.modifiers() & QtCore.Qt.ControlModifier):
             delta = event.angleDelta().y()
             current_size = self.layout_config.get('font_size', 22)
@@ -382,98 +714,9 @@ class PomodoroWidget(QtWidgets.QWidget):
         s = seconds % 60
         return f"{m:02d}:{s:02d}"
 
-    def digits_available(self):
-        local_dir = os.path.join(base_dir(), "assets", "digits")
-        parent_dir = os.path.join(os.path.dirname(base_dir()), "assets", "digits")
-        check_dir = local_dir if os.path.exists(local_dir) else parent_dir
-        return os.path.exists(os.path.join(check_dir, "0.png")) and os.path.exists(os.path.join(check_dir, "colon.png"))
-
-    def digit_path(self, ch):
-        name = "colon.png" if ch == ":" else f"{ch}.png"
-        local = os.path.join(base_dir(), "assets", "digits", name)
-        if os.path.exists(local):
-            return local
-        parent = os.path.join(os.path.dirname(base_dir()), "assets", "digits", name)
-        return parent if os.path.exists(parent) else local
-
     def set_time_text(self, text):
-        if self.digits_available():
-            # Keep text for size calculation but hide label
-            self.time_label.setText(text)
-            self.time_label.hide()
-            self.show_digit_time(text)
-        else:
-            self.digit_container.hide()
-            self.time_label.show()
-            self.time_label.setText(text)
-            self.time_label.adjustSize()
+        self.timer_widget.set_time_text(text)
 
-    def show_digit_time(self, text):
-        chars = [text[0], text[1], ":", text[3], text[4]]
-        pixmaps = []
-        for ch in chars:
-            p = self.digit_path(ch)
-            pm = QtGui.QPixmap(p)
-            pixmaps.append(pm if not pm.isNull() else QtGui.QPixmap())
-        
-        # Calculate optimal height to fit both width and height of the container
-        container_w = max(1, self.digit_container.width())
-        container_h = max(1, self.digit_container.height())
-        
-        # 1. Try scaling to full height first
-        temp_height = container_h
-        total_w_at_full_height = 0
-        for pm in pixmaps:
-            if not pm.isNull():
-                # w = pm.width() * (temp_height / pm.height())
-                total_w_at_full_height += pm.width() * (temp_height / max(1, pm.height()))
-            else:
-                total_w_at_full_height += temp_height * 0.5 # assume aspect ratio 0.5 for missing
-        
-        # Add padding estimate (approx 6% of height per digit)
-        # Fix truncation: increase padding slightly or ensure container is wide enough
-        # The container width is fixed by geometry. If digits + padding > container width, we scale down.
-        # But if padding calculation is too aggressive, it might overflow visually?
-        # Actually, let's just make sure we use available width efficiently.
-        
-        # Reduce internal padding calculation to tighten spacing
-        pad_px = temp_height * -0.04
-        total_w_at_full_height += pad_px * 5
-        
-        # 2. If too wide, scale down height
-        # Ensure we have a tiny bit of margin so it doesn't touch edges exactly
-        safe_container_w = container_w * 0.95 # Increase safety margin to 5% to prevent right side cut
-        
-        if total_w_at_full_height > safe_container_w:
-            scale_factor = safe_container_w / total_w_at_full_height
-            final_height = int(temp_height * scale_factor)
-        else:
-            final_height = temp_height
-            
-        final_height = max(1, final_height)
-        
-        scaled = []
-        for pm in pixmaps:
-            if pm.isNull():
-                scaled.append(QtGui.QPixmap())
-            else:
-                scaled.append(pm.scaledToHeight(final_height, QtCore.Qt.SmoothTransformation))
-                
-        for i, spm in enumerate(scaled):
-            self.digit_labels[i].setPixmap(spm)
-            self.digit_labels[i].setFixedHeight(final_height)
-            # Allow label to be its natural width
-            if not spm.isNull():
-                self.digit_labels[i].setFixedWidth(spm.width())
-            else:
-                self.digit_labels[i].setFixedWidth(max(1, int(final_height * 0.5)))
-                
-        # Tighten layout spacing
-        self.digit_layout.setSpacing(int(final_height * -0.04))
-        self.digit_layout.setContentsMargins(0, 0, 0, 0)
-        
-        self.digit_container.show()
-        self.digit_container.raise_()
 
     def start_or_resume(self):
         if self.phase == "idle":
@@ -489,12 +732,14 @@ class PomodoroWidget(QtWidgets.QWidget):
             self.play_category('resume', default_file='resume.mp3')
             self.apply_phase_visuals()
         self.start_button.hide()
+        self.setFocus()
 
     def pause_timer(self):
         if self.tick_timer.isActive():
             self.tick_timer.stop()
             self.paused = True
             self.apply_phase_visuals()
+            self.setFocus()
 
     def on_tick(self):
         self.elapsed += 1
@@ -521,9 +766,9 @@ class PomodoroWidget(QtWidgets.QWidget):
         use_static = False
         
         if self.adjusting_duration:
-             # When adjusting, show preview based on mode
+             # When dragging, show preview based on mode
              target_anim = "idle" if self.adjust_mode == 'work' else "paused"
-             use_static = True # Preview is static for now, or animated? User didn't specify, but static is safer for adjustment
+             use_static = True
         else:
             if self.phase == "working":
                 target_anim = "idle"
@@ -532,13 +777,19 @@ class PomodoroWidget(QtWidgets.QWidget):
                 target_anim = "paused"
                 use_static = False
             elif self.phase == "idle":
-                target_anim = "idle"
-                use_static = True # User requested static for Start/Idle state
+                # Idle (Waiting to Start)
+                # Visual depends on edit_mode: Work -> Idle Visual, Rest -> Paused Visual
+                target_anim = "idle" if self.edit_mode == 'work' else "paused"
+                use_static = True
             
-            # If paused logic is separate (user clicked pause)
+            # If paused (Paused from Work)
             if self.paused:
-                target_anim = "paused"
-                use_static = True # User requested static for Paused state
+                # Paused state
+                # Visual depends on edit_mode: Work -> Idle Visual, Rest -> Paused Visual
+                # Note: Traditionally Paused used 'paused' visual, but if we are editing work time,
+                # we should show 'idle' (work) visual to indicate what we are editing.
+                target_anim = "idle" if self.edit_mode == 'work' else "paused"
+                use_static = True
 
         # Only reload if changed
         current_static = getattr(self, 'current_anim_static', None)
@@ -677,156 +928,14 @@ class PomodoroWidget(QtWidgets.QWidget):
             self.player.setSource(url)
             self.player.play()
 
-    def eventFilter(self, obj, event):
-        # Allow dragging from digit container or its labels
-        is_time_obj = (obj is self.time_label) or (obj is self.digit_container) or (obj in self.digit_labels)
-        
-        if is_time_obj and LAYOUT_EDIT_MODE:
-            # Control + Left Click to move the label
-            if event.type() == QtCore.QEvent.MouseButtonPress and event.button() == QtCore.Qt.LeftButton and (event.modifiers() & QtCore.Qt.ControlModifier):
-                self.label_dragging = True
-                self.label_drag_start = event.globalPosition().toPoint()
-                self.label_orig_pos = self.time_label.pos()
-                return True
-            
-            if event.type() == QtCore.QEvent.MouseMove and getattr(self, 'label_dragging', False):
-                delta = event.globalPosition().toPoint() - self.label_drag_start
-                new_pos = self.label_orig_pos + delta
-                
-                # Update config
-                w, h = self.width(), self.height()
-                self.layout_config['time_x'] = new_pos.x() / w
-                self.layout_config['time_y'] = new_pos.y() / h
-                self.place_time_label()
-                return True
 
-            if event.type() == QtCore.QEvent.MouseButtonRelease and getattr(self, 'label_dragging', False):
-                self.label_dragging = False
-                self.save_settings()
-                return True
 
-        if is_time_obj:
-            if event.type() == QtCore.QEvent.MouseButtonPress and event.button() == QtCore.Qt.LeftButton:
-                self.adjusting_duration = True
-                self.adjust_mode = 'rest' if (event.modifiers() & QtCore.Qt.AltModifier) else 'work'
-                self.drag_start_x = event.globalPosition().x() if hasattr(event, 'globalPosition') else event.globalX()
-                self.drag_start_y = event.globalPosition().y() if hasattr(event, 'globalPosition') else event.globalY()
-                self.duration_start = self.work_duration if self.adjust_mode == 'work' else self.rest_duration
-                if self.adjust_mode == 'rest':
-                    pix = QtGui.QPixmap(resolve_asset("paused.png"))
-                    if not pix.isNull():
-                        self.image_label.setPixmap(pix)
-                        # self.resize(pix.size()) # Keep current size
-                return True
-            if event.type() == QtCore.QEvent.MouseMove and self.adjusting_duration and (event.buttons() & QtCore.Qt.LeftButton):
-                x = event.globalPosition().x() if hasattr(event, 'globalPosition') else event.globalX()
-                y = event.globalPosition().y() if hasattr(event, 'globalPosition') else event.globalY()
-                dx = x - self.drag_start_x
-                dy = self.drag_start_y - y
-                ax = abs(dx)
-                ay = abs(dy)
-                deadzone_sec = 20
-                deadzone_min = 10
-                eff_ax = max(0, ax - deadzone_sec)
-                eff_ay = max(0, ay - deadzone_min)
-                if eff_ax < eff_ay * 0.75:
-                    sec_delta = 0
-                else:
-                    sec_delta = int((eff_ax / 40) ** 1.2) * (1 if dx > 0 else -1)
-                min_delta = int((eff_ay / 60) ** 1.1) * (1 if dy > 0 else -1)
-                new_dur = int(self.duration_start + min_delta * 60 + sec_delta)
-                if self.adjust_mode == 'work':
-                    new_dur = max(300, min(3600, new_dur))
-                    if new_dur != self.work_duration:
-                        self.work_duration = new_dur
-                        if self.phase == "idle" or self.paused:
-                            self.set_time_text(self.format_time(self.work_duration))
-                else:
-                    new_dur = max(30, min(900, new_dur))
-                    if new_dur != self.rest_duration:
-                        self.rest_duration = new_dur
-                        if self.phase == "idle" or self.paused:
-                            self.set_time_text(self.format_time(self.rest_duration))
-                if self.adjust_mode == 'rest':
-                    pix = QtGui.QPixmap(resolve_asset("paused.png"))
-                    if not pix.isNull():
-                        self.image_label.setPixmap(pix)
-                        # self.resize(pix.size()) # Keep current size
-                return True
-            if event.type() == QtCore.QEvent.MouseButtonRelease and self.adjusting_duration:
-                self.adjusting_duration = False
-                if self.phase == "idle":
-                    target = self.work_duration if (self.adjust_mode == 'work') else self.rest_duration
-                    self.set_time_text(self.format_time(target))
-                    self.save_settings()
-                else:
-                    self.set_time_text(self.format_time(self.elapsed))
-                self.adjust_mode = None
-                self.apply_phase_visuals()
-                return True
-        return super().eventFilter(obj, event)
+    def moveEvent(self, event):
+        self.place_time_label() # Sync timer position
+        super().moveEvent(event)
 
     def closeEvent(self, event):
-        if getattr(self, 'exit_voice_enabled', True):
-            # If we are already closing (flag?), proceed.
-            if getattr(self, '_closing_for_real', False):
-                self.save_settings()
-                super().closeEvent(event)
-                return
-
-            # Initiate exit sequence
-            event.ignore()
-            
-            # Hide the window immediately (looks like it closed)
-            self.hide()
-            self._closing_for_real = True
-
-            # Use winsound for blocking playback (Windows only)
-            # This is much more reliable for exit sounds than QMediaPlayer
-            # Find an exit sound file
-            sound_file = None
-            
-            # 1. Try random pool
-            if self.pool_exit:
-                sound_file = random.choice(self.pool_exit)
-            
-            # 2. Try default file
-            if not sound_file:
-                default_path = sound_path('exit.mp3')
-                if os.path.exists(default_path):
-                    sound_file = default_path
-            
-            if sound_file:
-                print(f"Playing exit sound via winsound: {sound_file}")
-                # Play asynchronously first so UI thread isn't totally frozen if we wanted to animate,
-                # but here we are exiting, so blocking is actually fine/good.
-                # However, winsound.PlaySound doesn't support MP3 well directly? 
-                # Wait, winsound only plays WAV! QMediaPlayer plays MP3.
-                # Ah, that's the catch.
-                
-                # If files are MP3, winsound won't work easily without external codec or MCI.
-                # Let's try QMediaPlayer again but KEEP THE APP ALIVE properly.
-                
-                # The issue might be that the run loop is dying or QMediaPlayer is being garbage collected.
-                
-                # Alternative: Use a separate thread or just block?
-                # QMediaPlayer is async.
-                
-                self.play_category('exit', default_file='exit.mp3')
-                
-                # Force event loop processing
-                loop = QtCore.QEventLoop()
-                QtCore.QTimer.singleShot(3000, loop.quit)
-                loop.exec()
-                
-            else:
-                print("No exit sound found.")
-            
-            QtWidgets.QApplication.quit()
-            
-        else:
-            self.save_settings()
-            super().closeEvent(event)
+        self.timer_widget.close()
         if getattr(self, 'exit_voice_enabled', True):
             # If we are already closing (flag?), proceed.
             if getattr(self, '_closing_for_real', False):
@@ -904,6 +1013,9 @@ class PomodoroWidget(QtWidgets.QWidget):
                 self.check_updates_enabled = data.get("check_updates_enabled", True)
                 self.sounds_update_url = data.get("sounds_update_url", "")
                 self.setWindowFlag(QtCore.Qt.WindowStaysOnTopHint, self.always_on_top)
+                if hasattr(self, 'timer_widget'):
+                    self.timer_widget.setWindowFlag(QtCore.Qt.WindowStaysOnTopHint, self.always_on_top)
+                    self.timer_widget.show()
                 
                 # Restore layout config
                 layout_cfg = data.get("layout_config")
@@ -943,16 +1055,9 @@ class PomodoroWidget(QtWidgets.QWidget):
         except Exception as e:
             print(f"Failed to save settings: {e}")
 
-    def resizeEvent(self, event):
-        self.image_label.setGeometry(0, 0, self.width(), self.height())
-        self.place_time_label()
-        self.place_start_button()
-        self.place_resume_button()
-        if hasattr(self, 'time_bg_label'):
-            self.time_bg_label.setGeometry(self.time_label.geometry())
-        super().resizeEvent(event)
 
     def mousePressEvent(self, event):
+        self.setFocus()
         if event.button() == QtCore.Qt.LeftButton:
             if not self.adjusting_duration:
                 self.dragging = True
@@ -982,26 +1087,46 @@ class PomodoroWidget(QtWidgets.QWidget):
     def mouseDoubleClickEvent(self, event: QtGui.QMouseEvent):
         if event.button() != QtCore.Qt.LeftButton:
             return
+            
+        # Only allow time adjustment when idle or paused
+        if self.phase != "idle" and not self.paused:
+            return
+
         y = event.pos().y()
         h = self.height()
         if h <= 0:
             return
         idx = int((y / h) * 4)
-        if event.modifiers() & QtCore.Qt.AltModifier:
+        
+        # Use edit_mode instead of modifiers
+        mode = getattr(self, 'edit_mode', 'rest')
+        
+        if mode == 'rest':
             if idx <= 0:
                 self.rest_duration = 5 * 60
-                if self.phase == "idle" or self.paused:
-                    self.set_time_text(self.format_time(self.rest_duration))
+                self.exit_on_work_end = False
             elif idx == 1:
                 self.rest_duration = 10 * 60
-                if self.phase == "idle" or self.paused:
-                    self.set_time_text(self.format_time(self.rest_duration))
+                self.exit_on_work_end = False
             elif idx == 2:
                 self.rest_duration = 15 * 60
-                if self.phase == "idle" or self.paused:
-                    self.set_time_text(self.format_time(self.rest_duration))
+                self.exit_on_work_end = False
             else:
-                self.exit_on_work_end = True
+                self.exit_on_work_end = not self.exit_on_work_end
+                # Force refresh to show infinite symbol if needed
+                if self.phase == "idle" or self.paused:
+                    if self.exit_on_work_end:
+                        self.set_time_text("INF")
+                    else:
+                        self.set_time_text(self.format_time(self.rest_duration))
+                self.save_settings()
+                return
+
+            if self.phase == "idle" or self.paused:
+                if self.exit_on_work_end:
+                     self.set_time_text("INF")
+                else:
+                     self.set_time_text(self.format_time(self.rest_duration))
         else:
             if idx <= 0:
                 self.work_duration = 15 * 60
@@ -1022,6 +1147,9 @@ class PomodoroWidget(QtWidgets.QWidget):
     def toggle_always_on_top(self):
         self.always_on_top = not self.always_on_top
         self.setWindowFlag(QtCore.Qt.WindowStaysOnTopHint, self.always_on_top)
+        if hasattr(self, 'timer_widget'):
+            self.timer_widget.setWindowFlag(QtCore.Qt.WindowStaysOnTopHint, self.always_on_top)
+            self.timer_widget.show()
         self.show()
         self.save_settings()
 

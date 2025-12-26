@@ -1,21 +1,23 @@
 {
-    "work_duration": 2400,
-    "rest_duration": 487,
+    "work_duration": 2425,
+    "rest_duration": 306,
     "always_on_top": true,
     "voice_interval_minutes": 10,
-    "exit_on_work_end": true,
+    "exit_on_work_end": false,
     "exit_voice_enabled": true,
-    "check_updates_enabled": true,
+    "check_updates_enabled": false,
     "sounds_update_url": "https://raw.githubusercontent.com/yzxmm/pomodoro-assets/main/manifest.json",
     "layout_config": {
-        "time_x": 0.2125,
-        "time_y": 0.6375,
-        "time_w": 0.6083333333333333,
-        "time_h": 0.2833333333333333,
-        "font_size": 40
+        "timer_offset_x": 29,
+        "timer_offset_y": 148,
+        "font_size": 42,
+        "time_x": 0.09090909090909091,
+        "time_y": 0.5082644628099173,
+        "time_w": 0.640495867768595,
+        "time_h": 0.2975206611570248
     },
-    "x": 1274,
-    "y": 544,
-    "width": 240,
-    "height": 240
+    "x": 1567,
+    "y": 515,
+    "width": 242,
+    "height": 242
 }
