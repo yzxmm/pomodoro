@@ -485,12 +485,16 @@ class PomodoroWidget(QtWidgets.QWidget):
         self.random_pool = []  # 通用兜底池
         self.seasonal_pools = {'start': {}, 'end': {}, 'ten': {}, 'resume': {}}
         self.tag_pools = {'start': {}, 'end': {}, 'ten': {}, 'resume': {}}
+        self.holiday_pools = {}
         self.ten_voice_enabled = self.env_flag_enabled('POMODORO_TEN_ENABLE', default=True)
         self.voice_interval_minutes = 10
         self.build_sound_pool()
         self.update_sounds_async()
 
         self.load_settings()
+
+        # Check for holiday greeting (delayed to ensure app is ready)
+        QtCore.QTimer.singleShot(2000, self.check_holiday_greeting)
 
         self.dragging = False
         self.drag_offset = QtCore.QPoint()
@@ -1012,6 +1016,7 @@ class PomodoroWidget(QtWidgets.QWidget):
                 self.exit_voice_enabled = data.get("exit_voice_enabled", True)
                 self.check_updates_enabled = data.get("check_updates_enabled", True)
                 self.sounds_update_url = data.get("sounds_update_url", "")
+                self.last_greeting_date = data.get("last_greeting_date", "")
                 self.setWindowFlag(QtCore.Qt.WindowStaysOnTopHint, self.always_on_top)
                 if hasattr(self, 'timer_widget'):
                     self.timer_widget.setWindowFlag(QtCore.Qt.WindowStaysOnTopHint, self.always_on_top)
@@ -1043,6 +1048,7 @@ class PomodoroWidget(QtWidgets.QWidget):
             "exit_voice_enabled": getattr(self, "exit_voice_enabled", True),
             "check_updates_enabled": getattr(self, "check_updates_enabled", True),
             "sounds_update_url": getattr(self, "sounds_update_url", ""),
+            "last_greeting_date": getattr(self, "last_greeting_date", ""),
             "layout_config": self.layout_config,
             "x": self.x(),
             "y": self.y(),
@@ -1242,14 +1248,35 @@ class PomodoroWidget(QtWidgets.QWidget):
             'resume': self.pool_resume,
             'exit': self.pool_exit,
         }
-        pool = mapping.get(category, [])
+        pool = list(mapping.get(category, []))
+        
+        # 1. Mix Seasonal
         season = None
         try:
             season = self.current_season()
         except Exception:
             season = None
         spools = self.seasonal_pools.get(category, {})
+        
+        # Mix standard season (spring, summer...)
         sp = spools.get((season or '').lower(), [])
+        if sp:
+            pool.extend(sp)
+
+        # Mix holiday as season (christmas...) if exists in seasonal_pools
+        h = self.current_holiday()
+        if h:
+            hp = spools.get(h.lower(), [])
+            if hp:
+                pool.extend(hp)
+            
+        # 2. Mix Holiday (Common/Global)
+        if h:
+            h_sounds = self.holiday_pools.get(h, {}).get('common', [])
+            if h_sounds:
+                pool.extend(h_sounds)
+
+        # 3. Tag Override
         tag = None
         try:
             tag = self.current_tag()
@@ -1257,7 +1284,9 @@ class PomodoroWidget(QtWidgets.QWidget):
             tag = None
         tpools = getattr(self, 'tag_pools', {}).get(category, {})
         tp = tpools.get((tag or '').lower(), [])
-        chosen_pool = tp if tp else (sp if sp else pool)
+        
+        chosen_pool = tp if tp else pool
+        
         if chosen_pool:
             url = QtCore.QUrl.fromLocalFile(random.choice(chosen_pool))
             self.sound_queue.append(url)
@@ -1342,6 +1371,31 @@ class PomodoroWidget(QtWidgets.QWidget):
         add_dir_to(self.random_pool, os.path.join(base_parent, 'random'))
         add_dir_to(self.random_pool, cloud_root)
 
+        # Load Holiday Sounds
+        base_holidays = os.path.join(base_dir(), 'sounds', 'holidays')
+        parent_holidays = os.path.join(os.path.dirname(base_dir()), 'sounds', 'holidays')
+        cloud_holidays = os.path.join(cloud_root, 'holidays')
+        
+        for root in (base_holidays, parent_holidays, cloud_holidays):
+            if os.path.exists(root):
+                for h in os.listdir(root):
+                    h_path = os.path.join(root, h)
+                    if os.path.isdir(h_path):
+                        self.holiday_pools.setdefault(h, {'greeting': [], 'common': []})
+                        
+                        # Load common (root of holiday folder)
+                        for fn in os.listdir(h_path):
+                            fp = os.path.join(h_path, fn)
+                            if os.path.isfile(fp) and fn.lower().endswith(('.mp3', '.wav', '.ogg')):
+                                self.holiday_pools[h]['common'].append(fp)
+                                
+                        # Load greeting
+                        g_path = os.path.join(h_path, 'greeting')
+                        if os.path.isdir(g_path):
+                            for fn in os.listdir(g_path):
+                                if fn.lower().endswith(('.mp3', '.wav', '.ogg')):
+                                    self.holiday_pools[h]['greeting'].append(os.path.join(g_path, fn))
+
     def update_sounds_async(self):
         def worker():
             base_url = os.environ.get('POMODORO_SOUNDS_URL', '').strip()
@@ -1409,6 +1463,40 @@ class PomodoroWidget(QtWidgets.QWidget):
         if m in (9, 10, 11):
             return 'autumn'
         return 'winter'
+
+    def current_holiday(self):
+        d = QtCore.QDate.currentDate()
+        m = d.month()
+        day = d.day()
+        
+        # Christmas: Dec 24, 25, 26
+        if m == 12 and day in (24, 25, 26):
+            return 'christmas'
+            
+        return None
+
+    def check_holiday_greeting(self):
+        h = self.current_holiday()
+        if not h:
+            return
+
+        today_str = QtCore.QDate.currentDate().toString("yyyy-MM-dd")
+        last = getattr(self, 'last_greeting_date', "")
+        
+        if last != today_str:
+            # Play greeting
+            pool = self.holiday_pools.get(h, {}).get('greeting', [])
+            if not pool:
+                pool = self.holiday_pools.get(h, {}).get('common', [])
+            
+            if pool:
+                url = QtCore.QUrl.fromLocalFile(random.choice(pool))
+                self.sound_queue.insert(0, url)
+                if self.player.playbackState() != QMediaPlayer.PlaybackState.PlayingState:
+                    self.start_next_sound()
+                
+                self.last_greeting_date = today_str
+                self.save_settings()
 
     def current_tag(self):
         t = os.environ.get('POMODORO_TAG', '').strip().lower() or os.environ.get('POMODORO_THEME', '').strip().lower()
