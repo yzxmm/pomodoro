@@ -1,0 +1,204 @@
+{
+    "files": [
+        {
+            "url": "https://raw.githubusercontent.com/yzxmm/pomodoro-assets/main/end/1.mp3",
+            "category": "end"
+        },
+        {
+            "url": "https://raw.githubusercontent.com/yzxmm/pomodoro-assets/main/end/2.mp3",
+            "category": "end"
+        },
+        {
+            "url": "https://raw.githubusercontent.com/yzxmm/pomodoro-assets/main/end/3.mp3",
+            "category": "end"
+        },
+        {
+            "url": "https://raw.githubusercontent.com/yzxmm/pomodoro-assets/main/end/4.mp3",
+            "category": "end"
+        },
+        {
+            "url": "https://raw.githubusercontent.com/yzxmm/pomodoro-assets/main/end/5.mp3",
+            "category": "end"
+        },
+        {
+            "url": "https://raw.githubusercontent.com/yzxmm/pomodoro-assets/main/end/christmas/1.wav",
+            "category": "end",
+            "season": "christmas"
+        },
+        {
+            "url": "https://raw.githubusercontent.com/yzxmm/pomodoro-assets/main/end/christmas/2.wav",
+            "category": "end",
+            "season": "christmas"
+        },
+        {
+            "url": "https://raw.githubusercontent.com/yzxmm/pomodoro-assets/main/end/christmas/3.wav",
+            "category": "end",
+            "season": "christmas"
+        },
+        {
+            "url": "https://raw.githubusercontent.com/yzxmm/pomodoro-assets/main/end/dec28/1.mp3",
+            "category": "end",
+            "season": "dec28"
+        },
+        {
+            "url": "https://raw.githubusercontent.com/yzxmm/pomodoro-assets/main/exit/1.mp3",
+            "category": "exit"
+        },
+        {
+            "url": "https://raw.githubusercontent.com/yzxmm/pomodoro-assets/main/exit/2.mp3",
+            "category": "exit"
+        },
+        {
+            "url": "https://raw.githubusercontent.com/yzxmm/pomodoro-assets/main/exit/3.mp3",
+            "category": "exit"
+        },
+        {
+            "url": "https://raw.githubusercontent.com/yzxmm/pomodoro-assets/main/exit/4.mp3",
+            "category": "exit"
+        },
+        {
+            "url": "https://raw.githubusercontent.com/yzxmm/pomodoro-assets/main/exit/5.mp3",
+            "category": "exit"
+        },
+        {
+            "url": "https://raw.githubusercontent.com/yzxmm/pomodoro-assets/main/exit/christmas/1.wav",
+            "category": "exit",
+            "season": "christmas"
+        },
+        {
+            "url": "https://raw.githubusercontent.com/yzxmm/pomodoro-assets/main/exit/christmas/2.wav",
+            "category": "exit",
+            "season": "christmas"
+        },
+        {
+            "url": "https://raw.githubusercontent.com/yzxmm/pomodoro-assets/main/exit/christmas/3.wav",
+            "category": "exit",
+            "season": "christmas"
+        },
+        {
+            "url": "https://raw.githubusercontent.com/yzxmm/pomodoro-assets/main/exit/dec28/1.mp3",
+            "category": "exit",
+            "season": "dec28"
+        },
+        {
+            "url": "https://raw.githubusercontent.com/yzxmm/pomodoro-assets/main/interval/1.mp3",
+            "category": "interval"
+        },
+        {
+            "url": "https://raw.githubusercontent.com/yzxmm/pomodoro-assets/main/interval/2.mp3",
+            "category": "interval"
+        },
+        {
+            "url": "https://raw.githubusercontent.com/yzxmm/pomodoro-assets/main/interval/3.mp3",
+            "category": "interval"
+        },
+        {
+            "url": "https://raw.githubusercontent.com/yzxmm/pomodoro-assets/main/interval/4.mp3",
+            "category": "interval"
+        },
+        {
+            "url": "https://raw.githubusercontent.com/yzxmm/pomodoro-assets/main/interval/5.mp3",
+            "category": "interval"
+        },
+        {
+            "url": "https://raw.githubusercontent.com/yzxmm/pomodoro-assets/main/interval/christmas/1.wav",
+            "category": "interval",
+            "season": "christmas"
+        },
+        {
+            "url": "https://raw.githubusercontent.com/yzxmm/pomodoro-assets/main/interval/christmas/2.wav",
+            "category": "interval",
+            "season": "christmas"
+        },
+        {
+            "url": "https://raw.githubusercontent.com/yzxmm/pomodoro-assets/main/interval/christmas/3.wav",
+            "category": "interval",
+            "season": "christmas"
+        },
+        {
+            "url": "https://raw.githubusercontent.com/yzxmm/pomodoro-assets/main/interval/dec28/1.mp3",
+            "category": "interval",
+            "season": "dec28"
+        },
+        {
+            "url": "https://raw.githubusercontent.com/yzxmm/pomodoro-assets/main/resume/1.mp3",
+            "category": "resume"
+        },
+        {
+            "url": "https://raw.githubusercontent.com/yzxmm/pomodoro-assets/main/resume/2.mp3",
+            "category": "resume"
+        },
+        {
+            "url": "https://raw.githubusercontent.com/yzxmm/pomodoro-assets/main/resume/3.mp3",
+            "category": "resume"
+        },
+        {
+            "url": "https://raw.githubusercontent.com/yzxmm/pomodoro-assets/main/resume/4.mp3",
+            "category": "resume"
+        },
+        {
+            "url": "https://raw.githubusercontent.com/yzxmm/pomodoro-assets/main/resume/5.mp3",
+            "category": "resume"
+        },
+        {
+            "url": "https://raw.githubusercontent.com/yzxmm/pomodoro-assets/main/resume/christmas/1.wav",
+            "category": "resume",
+            "season": "christmas"
+        },
+        {
+            "url": "https://raw.githubusercontent.com/yzxmm/pomodoro-assets/main/resume/christmas/2.wav",
+            "category": "resume",
+            "season": "christmas"
+        },
+        {
+            "url": "https://raw.githubusercontent.com/yzxmm/pomodoro-assets/main/resume/christmas/3.wav",
+            "category": "resume",
+            "season": "christmas"
+        },
+        {
+            "url": "https://raw.githubusercontent.com/yzxmm/pomodoro-assets/main/resume/dec28/1.mp3",
+            "category": "resume",
+            "season": "dec28"
+        },
+        {
+            "url": "https://raw.githubusercontent.com/yzxmm/pomodoro-assets/main/start/1.mp3",
+            "category": "start"
+        },
+        {
+            "url": "https://raw.githubusercontent.com/yzxmm/pomodoro-assets/main/start/2.mp3",
+            "category": "start"
+        },
+        {
+            "url": "https://raw.githubusercontent.com/yzxmm/pomodoro-assets/main/start/3.mp3",
+            "category": "start"
+        },
+        {
+            "url": "https://raw.githubusercontent.com/yzxmm/pomodoro-assets/main/start/4.mp3",
+            "category": "start"
+        },
+        {
+            "url": "https://raw.githubusercontent.com/yzxmm/pomodoro-assets/main/start/5.mp3",
+            "category": "start"
+        },
+        {
+            "url": "https://raw.githubusercontent.com/yzxmm/pomodoro-assets/main/start/christmas/1.wav",
+            "category": "start",
+            "season": "christmas"
+        },
+        {
+            "url": "https://raw.githubusercontent.com/yzxmm/pomodoro-assets/main/start/christmas/2.wav",
+            "category": "start",
+            "season": "christmas"
+        },
+        {
+            "url": "https://raw.githubusercontent.com/yzxmm/pomodoro-assets/main/start/christmas/3.wav",
+            "category": "start",
+            "season": "christmas"
+        },
+        {
+            "url": "https://raw.githubusercontent.com/yzxmm/pomodoro-assets/main/start/dec28/1.mp3",
+            "category": "start",
+            "season": "dec28"
+        }
+    ]
+}

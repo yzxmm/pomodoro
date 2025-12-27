@@ -1,7 +1,14 @@
 # -*- mode: python ; coding: utf-8 -*-
 from PyInstaller.utils.hooks import collect_all
 
-datas = [('..\\assets', 'assets'), ('..\\sounds', 'sounds')]
+datas = [
+    ('assets', 'assets'),
+    ('sounds/start.mp3', 'sounds'),
+    ('sounds/end.mp3', 'sounds'),
+    ('sounds/interval.mp3', 'sounds'),
+    ('sounds/resume.mp3', 'sounds'),
+    ('sounds/exit.mp3', 'sounds'),
+]
 binaries = []
 hiddenimports = ['PySide6.QtMultimedia']
 tmp_ret = collect_all('PySide6')

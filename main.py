@@ -504,6 +504,8 @@ class PomodoroWidget(QtWidgets.QWidget):
 
         self.set_time_text(self.format_time(self.work_duration))
         self.menu_overlay = ImageMenu(self)
+        if 'menu_scale' in self.layout_config:
+            self.menu_overlay.set_scale(self.layout_config['menu_scale'])
 
         self.resume_button = QtWidgets.QLabel(self)
         self.resume_button.setFixedSize(200, 200)
@@ -682,6 +684,7 @@ class PomodoroWidget(QtWidgets.QWidget):
             step = delta / 1200.0 
             factor = 1.0 + step
             
+            # 1. Resize Main Window
             new_w = int(self.width() * factor)
             new_h = int(self.height() * factor)
             
@@ -694,6 +697,36 @@ class PomodoroWidget(QtWidgets.QWidget):
             new_w = int(new_h * ratio)
             
             self.resize(new_w, new_h)
+
+            # 2. Resize Timer Widget
+            # Scale font proportionally
+            current_font = self.timer_widget.font_size
+            # Use float calculation to avoid getting stuck at small integers, but store as int
+            # Better: scale based on window height ratio change if factor is too small?
+            # But factor is fine.
+            new_font = int(current_font * factor)
+            if new_font == current_font and factor != 1.0:
+                 # Force at least 1 unit change if factor suggests it
+                 if factor > 1: new_font += 1
+                 else: new_font -= 1
+            
+            new_font = max(8, min(200, new_font))
+            
+            if new_font != current_font:
+                self.timer_widget.font_size = new_font
+                self.timer_widget.update_layout()
+                self.layout_config['font_size'] = new_font
+
+            # 3. Resize Image Menu
+            current_scale = getattr(self.menu_overlay, 'ui_scale', 1.0)
+            new_scale = current_scale * factor
+            new_scale = max(0.5, min(5.0, new_scale))
+            
+            if abs(new_scale - current_scale) > 0.01:
+                self.menu_overlay.set_scale(new_scale)
+                self.layout_config['menu_scale'] = new_scale
+            
+            self.save_settings()
             event.accept()
             return
 
@@ -938,68 +971,7 @@ class PomodoroWidget(QtWidgets.QWidget):
         self.place_time_label() # Sync timer position
         super().moveEvent(event)
 
-    def closeEvent(self, event):
-        self.timer_widget.close()
-        if getattr(self, 'exit_voice_enabled', True):
-            # If we are already closing (flag?), proceed.
-            if getattr(self, '_closing_for_real', False):
-                self.save_settings()
-                super().closeEvent(event)
-                return
 
-            # Initiate exit sequence
-            event.ignore()
-            
-            # Hide the window immediately (looks like it closed)
-            self.hide()
-            self._closing_for_real = True
-
-            # Use winsound for blocking playback (Windows only)
-            # This is much more reliable for exit sounds than QMediaPlayer
-            # Find an exit sound file
-            sound_file = None
-            
-            # 1. Try random pool
-            if self.pool_exit:
-                sound_file = random.choice(self.pool_exit)
-            
-            # 2. Try default file
-            if not sound_file:
-                default_path = sound_path('exit.mp3')
-                if os.path.exists(default_path):
-                    sound_file = default_path
-            
-            if sound_file:
-                print(f"Playing exit sound via winsound: {sound_file}")
-                # Play asynchronously first so UI thread isn't totally frozen if we wanted to animate,
-                # but here we are exiting, so blocking is actually fine/good.
-                # However, winsound.PlaySound doesn't support MP3 well directly? 
-                # Wait, winsound only plays WAV! QMediaPlayer plays MP3.
-                # Ah, that's the catch.
-                
-                # If files are MP3, winsound won't work easily without external codec or MCI.
-                # Let's try QMediaPlayer again but KEEP THE APP ALIVE properly.
-                
-                # The issue might be that the run loop is dying or QMediaPlayer is being garbage collected.
-                
-                # Alternative: Use a separate thread or just block?
-                # QMediaPlayer is async.
-                
-                self.play_category('exit', default_file='exit.mp3')
-                
-                # Force event loop processing
-                loop = QtCore.QEventLoop()
-                QtCore.QTimer.singleShot(3000, loop.quit)
-                loop.exec()
-                
-            else:
-                print("No exit sound found.")
-            
-            QtWidgets.QApplication.quit()
-            
-        else:
-            self.save_settings()
-            super().closeEvent(event)
 
     def load_settings(self):
         settings_path = os.path.join(base_dir(), "settings.json")
@@ -1167,10 +1139,6 @@ class PomodoroWidget(QtWidgets.QWidget):
         self.exit_voice_enabled = not getattr(self, 'exit_voice_enabled', True)
         self.save_settings()
 
-    def toggle_check_updates(self):
-        self.check_updates_enabled = not getattr(self, "check_updates_enabled", True)
-        self.save_settings()
-
     def closeEvent(self, event):
         if getattr(self, 'exit_voice_enabled', True):
             # If we are already closing (flag?), proceed.
@@ -1184,6 +1152,11 @@ class PomodoroWidget(QtWidgets.QWidget):
             
             # Hide the window immediately (looks like it closed)
             self.hide()
+            if hasattr(self, 'timer_widget'):
+                self.timer_widget.hide()
+                self.timer_widget.close()
+                self.timer_widget.deleteLater()
+                self.timer_widget = None
             self._closing_for_real = True
 
             # Use winsound for blocking playback (Windows only)
@@ -1248,35 +1221,64 @@ class PomodoroWidget(QtWidgets.QWidget):
             'resume': self.pool_resume,
             'exit': self.pool_exit,
         }
-        pool = list(mapping.get(category, []))
         
-        # 1. Mix Seasonal
+        # 1. Prepare candidate pools
+        base_pool = list(mapping.get(category, []))
+        season_pool = []
+        holiday_pool = []
+
+        # Get Season Sounds
         season = None
         try:
             season = self.current_season()
         except Exception:
             season = None
-        spools = self.seasonal_pools.get(category, {})
         
-        # Mix standard season (spring, summer...)
+        spools = self.seasonal_pools.get(category, {})
         sp = spools.get((season or '').lower(), [])
         if sp:
-            pool.extend(sp)
+            season_pool.extend(sp)
 
-        # Mix holiday as season (christmas...) if exists in seasonal_pools
+        # Get Holiday Sounds
         h = self.current_holiday()
         if h:
+            # From seasonal_pools (e.g. random/start/christmas)
             hp = spools.get(h.lower(), [])
             if hp:
-                pool.extend(hp)
+                holiday_pool.extend(hp)
             
-        # 2. Mix Holiday (Common/Global)
-        if h:
+            # From global holiday pools (e.g. sounds/holidays/christmas)
             h_sounds = self.holiday_pools.get(h, {}).get('common', [])
             if h_sounds:
-                pool.extend(h_sounds)
+                holiday_pool.extend(h_sounds)
 
-        # 3. Tag Override
+        # 2. Determine Strategy
+        final_pool = []
+        
+        # Track holiday playback state per day
+        # Structure: self.holiday_play_state = {'date': '2023-12-27', 'cats': set()}
+        if not hasattr(self, 'holiday_play_state'):
+            self.holiday_play_state = {'date': '', 'cats': set()}
+            
+        today_str = QtCore.QDate.currentDate().toString("yyyy-MM-dd")
+        
+        # Reset if date changed
+        if self.holiday_play_state['date'] != today_str:
+            self.holiday_play_state = {'date': today_str, 'cats': set()}
+            
+        if h and holiday_pool:
+            if category not in self.holiday_play_state['cats']:
+                # First time today for this category -> Exclusive Holiday
+                final_pool = holiday_pool
+                self.holiday_play_state['cats'].add(category)
+            else:
+                # Subsequent times -> Mix everything
+                final_pool = base_pool + season_pool + holiday_pool
+        else:
+            # No holiday or no holiday sounds -> Standard Mix
+            final_pool = base_pool + season_pool
+
+        # 3. Tag Override (Highest Priority)
         tag = None
         try:
             tag = self.current_tag()
@@ -1285,7 +1287,8 @@ class PomodoroWidget(QtWidgets.QWidget):
         tpools = getattr(self, 'tag_pools', {}).get(category, {})
         tp = tpools.get((tag or '').lower(), [])
         
-        chosen_pool = tp if tp else pool
+        # If tag exists, it overrides everything else
+        chosen_pool = tp if tp else final_pool
         
         if chosen_pool:
             url = QtCore.QUrl.fromLocalFile(random.choice(chosen_pool))
@@ -1339,49 +1342,55 @@ class PomodoroWidget(QtWidgets.QWidget):
                             for fn in os.listdir(tp):
                                 if fn.lower().endswith(('.mp3', '.wav', '.ogg')):
                                     self.tag_pools[cat][key].append(os.path.join(tp, fn))
-        cloud_root = os.path.join(base_dir(), 'sounds', 'cloud')
-        add_dir_to(self.pool_start, os.path.join(cloud_root, 'start'))
-        add_dir_to(self.pool_end, os.path.join(cloud_root, 'end'))
-        add_dir_to(self.pool_interval, os.path.join(cloud_root, 'interval'))
-        add_dir_to(self.pool_resume, os.path.join(cloud_root, 'resume'))
-        add_dir_to(self.pool_exit, os.path.join(cloud_root, 'exit'))
-        for cat in ('start', 'end', 'interval', 'resume', 'exit'):
-            base_cat = os.path.join(cloud_root, cat)
-            if os.path.exists(base_cat):
-                for s in os.listdir(base_cat):
-                    sp = os.path.join(base_cat, s)
-                    if os.path.isdir(sp):
-                        key = s.lower()
-                        self.seasonal_pools[cat].setdefault(key, [])
-                        for fn in os.listdir(sp):
-                            if fn.lower().endswith(('.mp3', '.wav', '.ogg')):
-                                self.seasonal_pools[cat][key].append(os.path.join(sp, fn))
-            tags_cat = os.path.join(cloud_root, cat, 'tags')
-            if os.path.exists(tags_cat):
-                for t in os.listdir(tags_cat):
-                    tp = os.path.join(tags_cat, t)
-                    if os.path.isdir(tp):
-                        key = t.lower()
-                        self.tag_pools[cat].setdefault(key, [])
-                        for fn in os.listdir(tp):
-                            if fn.lower().endswith(('.mp3', '.wav', '.ogg')):
-                                self.tag_pools[cat][key].append(os.path.join(tp, fn))
+                                    
+        # Scan Cloud Directory (No Copy Strategy)
+        cloud_root = os.path.join(base_dir(), 'cloud')
+        if os.path.exists(cloud_root):
+            add_dir_to(self.pool_start, os.path.join(cloud_root, 'start'))
+            add_dir_to(self.pool_end, os.path.join(cloud_root, 'end'))
+            add_dir_to(self.pool_interval, os.path.join(cloud_root, 'interval'))
+            add_dir_to(self.pool_resume, os.path.join(cloud_root, 'resume'))
+            add_dir_to(self.pool_exit, os.path.join(cloud_root, 'exit'))
+            
+            for cat in ('start', 'end', 'interval', 'resume', 'exit'):
+                base_cat = os.path.join(cloud_root, cat)
+                if os.path.exists(base_cat):
+                    # Scan for seasonal subfolders (direct children that are not 'tags')
+                    for s in os.listdir(base_cat):
+                        sp = os.path.join(base_cat, s)
+                        if os.path.isdir(sp) and s.lower() != 'tags':
+                            key = s.lower()
+                            self.seasonal_pools[cat].setdefault(key, [])
+                            for fn in os.listdir(sp):
+                                if fn.lower().endswith(('.mp3', '.wav', '.ogg')):
+                                    self.seasonal_pools[cat][key].append(os.path.join(sp, fn))
+                                    
+                    # Scan for tags
+                    tags_cat = os.path.join(base_cat, 'tags')
+                    if os.path.exists(tags_cat):
+                        for t in os.listdir(tags_cat):
+                            tp = os.path.join(tags_cat, t)
+                            if os.path.isdir(tp):
+                                key = t.lower()
+                                self.tag_pools[cat].setdefault(key, [])
+                                for fn in os.listdir(tp):
+                                    if fn.lower().endswith(('.mp3', '.wav', '.ogg')):
+                                        self.tag_pools[cat][key].append(os.path.join(tp, fn))
+            
         # 通用兜底池，支持未分类文件
         add_dir_to(self.random_pool, os.path.join(base_local, 'random'))
         add_dir_to(self.random_pool, os.path.join(base_parent, 'random'))
-        add_dir_to(self.random_pool, cloud_root)
-
+        
         # Load Holiday Sounds
         base_holidays = os.path.join(base_dir(), 'sounds', 'holidays')
         parent_holidays = os.path.join(os.path.dirname(base_dir()), 'sounds', 'holidays')
-        cloud_holidays = os.path.join(cloud_root, 'holidays')
         
-        for root in (base_holidays, parent_holidays, cloud_holidays):
+        for root in (base_holidays, parent_holidays):
             if os.path.exists(root):
                 for h in os.listdir(root):
                     h_path = os.path.join(root, h)
                     if os.path.isdir(h_path):
-                        self.holiday_pools.setdefault(h, {'greeting': [], 'common': []})
+                        self.holiday_pools.setdefault(h, {'common': [], 'greeting': []})
                         
                         # Load common (root of holiday folder)
                         for fn in os.listdir(h_path):
@@ -1400,19 +1409,44 @@ class PomodoroWidget(QtWidgets.QWidget):
         def worker():
             base_url = os.environ.get('POMODORO_SOUNDS_URL', '').strip()
             if not base_url:
+                base_url = getattr(self, 'sounds_update_url', '').strip()
+            
+            if not base_url:
                 return
+
+            # Git support
+            if base_url.endswith('.git'):
+                cloud_root = os.path.join(base_dir(), 'cloud')
+                if os.path.isdir(os.path.join(cloud_root, '.git')):
+                    try:
+                        import subprocess
+                        # Check git presence
+                        subprocess.check_call(['git', '--version'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                        # Pull
+                        subprocess.check_call(['git', 'pull'], cwd=cloud_root, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                        self.build_sound_pool()
+                    except Exception as e:
+                        print(f"Git background update failed: {e}")
+                return
+                
             try:
                 # Setup request with User-Agent to avoid blocking by some free hosts
                 headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'}
                 
-                manifest_url = base_url.rstrip('/') + '/manifest.json'
+                if base_url.lower().endswith('.json'):
+                    manifest_url = base_url
+                else:
+                    manifest_url = base_url.rstrip('/') + '/manifest.json'
+                    
                 req = urllib.request.Request(manifest_url, headers=headers)
                 
                 with urllib.request.urlopen(req, timeout=10) as resp:
                     data = json.loads(resp.read().decode('utf-8'))
                 
                 files = data if isinstance(data, list) else data.get('files', [])
-                cloud_root = os.path.join(base_dir(), 'sounds', 'cloud')
+                
+                # Use cloud folder for downloaded assets
+                cloud_root = os.path.join(base_dir(), 'cloud')
                 os.makedirs(cloud_root, exist_ok=True)
                 
                 for item in files:
@@ -1422,16 +1456,25 @@ class PomodoroWidget(QtWidgets.QWidget):
                     else:
                         url = item.get('url')
                         cat = (item.get('category') or 'start').lower()
-                        if cat not in ('start', 'end', 'ten', 'resume'):
-                            cat = 'start'
-                        season = (item.get('season') or '').strip().lower()
-                        tag = (item.get('tag') or '').strip().lower()
-                        if season:
-                            target_dir = os.path.join(cloud_root, cat, season)
-                        elif tag:
-                            target_dir = os.path.join(cloud_root, cat, 'tags', tag)
+                        
+                        if cat == 'holiday':
+                            h = (item.get('holiday') or 'unknown').strip().lower()
+                            t = (item.get('type') or 'common').strip().lower()
+                            target_dir = os.path.join(cloud_root, 'holidays', h, t)
                         else:
-                            target_dir = os.path.join(cloud_root, cat)
+                            # Standard categories
+                            if cat not in ('start', 'end', 'ten', 'resume', 'exit', 'interval'):
+                                cat = 'start'
+                            
+                            season = (item.get('season') or '').strip().lower()
+                            tag = (item.get('tag') or '').strip().lower()
+                            
+                            if season:
+                                target_dir = os.path.join(cloud_root, cat, season)
+                            elif tag:
+                                target_dir = os.path.join(cloud_root, cat, 'tags', tag)
+                            else:
+                                target_dir = os.path.join(cloud_root, cat)
                     
                     os.makedirs(target_dir, exist_ok=True)
                     name = os.path.basename(url)
@@ -1472,6 +1515,10 @@ class PomodoroWidget(QtWidgets.QWidget):
         # Christmas: Dec 24, 25, 26
         if m == 12 and day in (24, 25, 26):
             return 'christmas'
+            
+        # Dec 28 Special Day
+        if m == 12 and day == 28:
+            return 'dec28'
             
         return None
 
@@ -1554,71 +1601,7 @@ class PomodoroWidget(QtWidgets.QWidget):
         # But closeEvent is tricky.
         pass
 
-    def toggle_exit_voice(self):
-        self.exit_voice_enabled = not getattr(self, 'exit_voice_enabled', True)
-        self.save_settings()
 
-    def closeEvent(self, event):
-        if getattr(self, 'exit_voice_enabled', True):
-            # If we are already closing (flag?), proceed.
-            if getattr(self, '_closing_for_real', False):
-                self.save_settings()
-                super().closeEvent(event)
-                return
-
-            # Initiate exit sequence
-            event.ignore()
-            
-            # Hide the window immediately (looks like it closed)
-            self.hide()
-            self._closing_for_real = True
-
-            # Use winsound for blocking playback (Windows only)
-            # This is much more reliable for exit sounds than QMediaPlayer
-            # Find an exit sound file
-            sound_file = None
-            
-            # 1. Try random pool
-            if self.pool_exit:
-                sound_file = random.choice(self.pool_exit)
-            
-            # 2. Try default file
-            if not sound_file:
-                default_path = sound_path('exit.mp3')
-                if os.path.exists(default_path):
-                    sound_file = default_path
-            
-            if sound_file:
-                print(f"Playing exit sound via winsound: {sound_file}")
-                # Play asynchronously first so UI thread isn't totally frozen if we wanted to animate,
-                # but here we are exiting, so blocking is actually fine/good.
-                # However, winsound.PlaySound doesn't support MP3 well directly? 
-                # Wait, winsound only plays WAV! QMediaPlayer plays MP3.
-                # Ah, that's the catch.
-                
-                # If files are MP3, winsound won't work easily without external codec or MCI.
-                # Let's try QMediaPlayer again but KEEP THE APP ALIVE properly.
-                
-                # The issue might be that the run loop is dying or QMediaPlayer is being garbage collected.
-                
-                # Alternative: Use a separate thread or just block?
-                # QMediaPlayer is async.
-                
-                self.play_category('exit', default_file='exit.mp3')
-                
-                # Force event loop processing
-                loop = QtCore.QEventLoop()
-                QtCore.QTimer.singleShot(3000, loop.quit)
-                loop.exec()
-                
-            else:
-                print("No exit sound found.")
-            
-            QtWidgets.QApplication.quit()
-            
-        else:
-            self.save_settings()
-            super().closeEvent(event)
 
 
 def resolve_menu_icon(name):

@@ -21,6 +21,7 @@ class ImageMenu(QtWidgets.QFrame):
     def __init__(self, owner):
         super().__init__(owner)
         self.owner = owner
+        self.ui_scale = 1.0
         self.setWindowFlags(QtCore.Qt.Popup | QtCore.Qt.FramelessWindowHint)
         self.setAttribute(QtCore.Qt.WA_TranslucentBackground, True)
         self.setAttribute(QtCore.Qt.WA_StyledBackground, True)  # Ensure background is painted
@@ -49,7 +50,13 @@ class ImageMenu(QtWidgets.QFrame):
             """)
 
         self.setup_ui()
-        self.setMinimumWidth(250)  # Make menu wider as requested
+        self.setMinimumWidth(int(250 * self.ui_scale))
+
+    def set_scale(self, scale):
+        self.ui_scale = scale
+        self.setup_ui()
+        self.refresh_controls()
+        self.adjustSize()
 
     def paintEvent(self, event):
         opt = QtWidgets.QStyleOption()
@@ -58,17 +65,23 @@ class ImageMenu(QtWidgets.QFrame):
         self.style().drawPrimitive(QtWidgets.QStyle.PE_Widget, opt, p, self)
 
     def setup_ui(self):
+        # Clear existing layout
+        if self.layout():
+            QtWidgets.QWidget().setLayout(self.layout())
+
         root = QtWidgets.QVBoxLayout(self)
         # Increase vertical margins to make the menu taller ("not so flat")
-        root.setContentsMargins(15, 20, 15, 20)
-        root.setSpacing(10) # Increase spacing between rows
+        m_h = int(15 * self.ui_scale)
+        m_v = int(20 * self.ui_scale)
+        root.setContentsMargins(m_h, m_v, m_h, m_v)
+        root.setSpacing(int(10 * self.ui_scale)) # Increase spacing between rows
 
         top = QtWidgets.QHBoxLayout()
-        top.setSpacing(2) # Make top row buttons compact
+        top.setSpacing(int(2 * self.ui_scale)) # Make top row buttons compact
         top.setAlignment(QtCore.Qt.AlignCenter) # Center the buttons
         
         bottom = QtWidgets.QHBoxLayout()
-        bottom.setSpacing(6)
+        bottom.setSpacing(int(6 * self.ui_scale))
 
         self.btn_pause = QtWidgets.QPushButton("暂停", self)
         self.setup_btn(self.btn_pause, "pause.png", "暂停")
@@ -92,7 +105,7 @@ class ImageMenu(QtWidgets.QFrame):
         
         # Bottom area for settings (checkbox style) -> Moved to top
         settings_layout = QtWidgets.QVBoxLayout()
-        settings_layout.setSpacing(2)
+        settings_layout.setSpacing(int(2 * self.ui_scale))
         settings_layout.setAlignment(QtCore.Qt.AlignCenter)  # Center align the settings buttons
         
         self.btn_check_update = QtWidgets.QPushButton("", self)
@@ -105,16 +118,19 @@ class ImageMenu(QtWidgets.QFrame):
 
         root.addLayout(settings_layout)
         root.addLayout(top)
-        # root.addLayout(middle) # Removed
-        # root.addLayout(settings_layout) # Moved to top
+        
+        self.setMinimumWidth(int(250 * self.ui_scale))
+
 
     def setup_btn(self, btn, icon_name, text):
         path = resolve_menu_icon(icon_name)
         if path and os.path.exists(path):
             btn.setText("")
             btn.setIcon(QtGui.QIcon(path))
-            btn.setIconSize(QtCore.QSize(20, 20))
-            btn.setFixedSize(28, 28)
+            s = int(20 * self.ui_scale)
+            btn.setIconSize(QtCore.QSize(s, s))
+            bs = int(28 * self.ui_scale)
+            btn.setFixedSize(bs, bs)
             btn.setStyleSheet("QPushButton { border: none; background: transparent; } QPushButton:hover { background: rgba(128, 128, 128, 0.2); border-radius: 4px; }")
             return True
         else:
@@ -129,19 +145,21 @@ class ImageMenu(QtWidgets.QFrame):
             btn.setIcon(QtGui.QIcon()) # No icon if unchecked or missing
             
         btn.setText(f" {text}") # Add some spacing
-        btn.setIconSize(QtCore.QSize(18, 18))
+        s = int(18 * self.ui_scale)
+        btn.setIconSize(QtCore.QSize(s, s))
         # Make it look like a menu item
-        btn.setStyleSheet("""
-            QPushButton { 
+        pad = int(4 * self.ui_scale)
+        btn.setStyleSheet(f"""
+            QPushButton {{ 
                 border: none; 
                 background: transparent; 
                 text-align: left;
-                padding: 4px;
-            } 
-            QPushButton:hover { 
+                padding: {pad}px;
+            }} 
+            QPushButton:hover {{ 
                 background: rgba(128, 128, 128, 0.2); 
                 border-radius: 4px; 
-            }
+            }}
         """)
 
     def setup_full_image_btn(self, btn, image_name, fallback_text):
@@ -156,14 +174,15 @@ class ImageMenu(QtWidgets.QFrame):
                 btn.setText("")
                 
                 # Scale if too large
-                max_height = 24
+                max_height = int(24 * self.ui_scale)
                 if pix.height() > max_height:
                     pix = pix.scaledToHeight(max_height, QtCore.Qt.SmoothTransformation)
                     
                 btn.setIcon(QtGui.QIcon(pix))
                 btn.setIconSize(pix.size())
                 # Add a little padding or match image size exactly
-                btn.setFixedSize(pix.width() + 8, pix.height() + 8)
+                pad = int(8 * self.ui_scale)
+                btn.setFixedSize(pix.width() + pad, pix.height() + pad)
                 btn.setStyleSheet("""
                     QPushButton { 
                         border: none; 
@@ -180,23 +199,23 @@ class ImageMenu(QtWidgets.QFrame):
         # Fallback to text
         btn.setText(fallback_text)
         btn.setIcon(QtGui.QIcon())
-        # btn.setFixedSize(QtCore.QSize(16777215, 16777215)) # REMOVED: Caused layout explosion
         
         # Remove fixed size constraint
         btn.setMinimumSize(0, 0)
         btn.setMaximumSize(16777215, 16777215)
         
-        btn.setStyleSheet("""
-            QPushButton { 
+        pad = int(4 * self.ui_scale)
+        btn.setStyleSheet(f"""
+            QPushButton {{ 
                 border: none; 
                 background: transparent; 
                 text-align: left;
-                padding: 4px;
-            } 
-            QPushButton:hover { 
+                padding: {pad}px;
+            }} 
+            QPushButton:hover {{ 
                 background: rgba(128, 128, 128, 0.2); 
                 border-radius: 4px; 
-            }
+            }}
         """)
         return False
 
@@ -220,7 +239,7 @@ class ImageMenu(QtWidgets.QFrame):
         pix_main = QtGui.QPixmap(main_path)
         
         # Scale main image if too large
-        max_height = 24
+        max_height = int(24 * self.ui_scale)
         if pix_main.height() > max_height:
              pix_main = pix_main.scaledToHeight(max_height, QtCore.Qt.SmoothTransformation)
         
@@ -230,10 +249,10 @@ class ImageMenu(QtWidgets.QFrame):
         
         # Calculate size
         # We need space for the checkmark on the left.
-        check_width = 20 # Reduced from 24
-        padding = 4
+        check_width = int(20 * self.ui_scale)
+        padding = int(4 * self.ui_scale)
         total_width = check_width + padding + pix_main.width() + padding
-        total_height = max(pix_main.height(), 20) + padding * 2
+        total_height = max(pix_main.height(), int(20 * self.ui_scale)) + padding * 2
         
         btn.setFixedSize(total_width, total_height)
         
@@ -259,6 +278,7 @@ class ImageMenu(QtWidgets.QFrame):
                 border-radius: 4px; 
             }}
         """)
+
 
     def show_at(self, global_pos):
         try:
