@@ -25,6 +25,7 @@ class ImageMenu(QtWidgets.QFrame):
         self.setWindowFlags(QtCore.Qt.Popup | QtCore.Qt.FramelessWindowHint)
         self.setAttribute(QtCore.Qt.WA_TranslucentBackground, True)
         self.setAttribute(QtCore.Qt.WA_StyledBackground, True)  # Ensure background is painted
+        self.setFocusPolicy(QtCore.Qt.StrongFocus)  # Ensure we can accept focus for cheat codes
         self.setObjectName("ContextMenu")
         
         # Check for menu background image
@@ -64,6 +65,10 @@ class ImageMenu(QtWidgets.QFrame):
         p = QtGui.QPainter(self)
         self.style().drawPrimitive(QtWidgets.QStyle.PE_Widget, opt, p, self)
 
+    def keyPressEvent(self, event):
+        # Forward key events to owner (PomodoroWidget) for cheat codes
+        self.owner.keyPressEvent(event)
+        super().keyPressEvent(event)
     def setup_ui(self):
         # Clear existing layout
         if self.layout():
@@ -92,11 +97,10 @@ class ImageMenu(QtWidgets.QFrame):
         
         self.btn_exit = QtWidgets.QPushButton("退出", self)
         self.setup_btn(self.btn_exit, "exit.png", "退出")
-        self.btn_exit.clicked.connect(lambda: (QtWidgets.QApplication.quit(), self.close()))
+        self.btn_exit.clicked.connect(lambda: (self.close(), QtWidgets.QApplication.quit()))
 
-        # Interval Button (Moved to top row)
-        self.btn_interval = QtWidgets.QPushButton(self.owner.voice_interval_label_text(), self)
-        self.btn_interval.clicked.connect(lambda: (self.owner.cycle_voice_interval(), self.refresh_controls()))
+        self.btn_interval = QtWidgets.QPushButton("间隔", self)
+        self.btn_interval.clicked.connect(lambda: (self.owner.toggle_interval_voice(), self.refresh_controls()))
 
         top.addWidget(self.btn_pause)
         top.addWidget(self.btn_top)
@@ -286,6 +290,9 @@ class ImageMenu(QtWidgets.QFrame):
             self.adjustSize()
             self.move(global_pos - QtCore.QPoint(self.width() // 2, self.height() // 2))
             self.show()
+            self.raise_()
+            self.activateWindow()
+            self.setFocus()
         except Exception as e:
             print(f"ERROR in show_at: {e}")
 

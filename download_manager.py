@@ -3,11 +3,14 @@ import json
 import urllib.request
 import urllib.error
 import concurrent.futures
+import subprocess
+import shutil
 from PySide6 import QtCore, QtWidgets
 
 class DownloadWorker(QtCore.QObject):
     finished = QtCore.Signal()
     progress = QtCore.Signal(str) # Message to display
+    progress_value = QtCore.Signal(int) # Progress percentage (0-100)
 
     def __init__(self, base_dir):
         super().__init__()
@@ -106,24 +109,22 @@ class DownloadWorker(QtCore.QObject):
             return
 
         # self.progress.emit("Checking for updates...")
-        self.progress.emit("Moe moe kyunkyunnnnnnn↝")
+        self.progress.emit("正在检查更新...")
         
         # Special handling for git repositories
         if manifest_url.endswith('.git'):
-            self.progress.emit("Syncing with git repository...")
+            self.progress.emit("正在同步 Git 仓库...")
+            self.progress_value.emit(10)
             cloud_dir = os.path.join(self.base_dir, "cloud")
             
             try:
-                import subprocess
-                import shutil
-                
                 # Check if git is available
                 try:
                     subprocess.check_call(['git', '--version'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
                     print("Git is available.")
                 except (subprocess.CalledProcessError, FileNotFoundError):
                     print("Git is not installed or not in PATH")
-                    self.progress.emit("Git not found, skipping update")
+                    self.progress.emit("未找到 Git，跳过更新")
                     self.finished.emit()
                     return
 
@@ -131,7 +132,8 @@ class DownloadWorker(QtCore.QObject):
                     # It's already a git repo, pull
                     print(f"Pulling in {cloud_dir}")
                     # self.progress.emit("Updating existing repository...")
-                    self.progress.emit("Moe moe kyunkyunnnnnnn↝")
+                    self.progress.emit("正在更新资源...")
+                    self.progress_value.emit(30)
                     try:
                         # 1. Get list of deleted files (User deleted them because they didn't like them)
                         status_out = subprocess.check_output(['git', 'status', '--porcelain'], cwd=cloud_dir).decode('utf-8', errors='ignore')
@@ -151,7 +153,8 @@ class DownloadWorker(QtCore.QObject):
                         old_head = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=cloud_dir).decode('utf-8').strip()
                         
                         # 4. Pull updates
-                        subprocess.check_call(['git', 'pull'], cwd=cloud_dir)
+                        # Use subprocess.run with timeout to prevent hanging
+                        subprocess.run(['git', 'pull'], cwd=cloud_dir, check=True, timeout=30)
                         
                         # 5. Get new HEAD
                         new_head = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=cloud_dir).decode('utf-8').strip()
@@ -181,14 +184,14 @@ class DownloadWorker(QtCore.QObject):
 
                     except subprocess.CalledProcessError as e:
                         print(f"Git pull failed: {e}")
-                        self.progress.emit("Git pull failed")
+                        self.progress.emit("Git 拉取失败")
                 else:
                     # Not a git repo or doesn't exist
                     if os.path.exists(cloud_dir):
                         # Check if empty
                         if os.listdir(cloud_dir):
                             print(f"Directory {cloud_dir} exists and is not empty. Backing up...")
-                            self.progress.emit("Backing up old cloud folder...")
+                            self.progress.emit("正在备份旧资源文件夹...")
                             backup_path = cloud_dir + "_backup"
                             try:
                                 if os.path.exists(backup_path):
@@ -196,23 +199,26 @@ class DownloadWorker(QtCore.QObject):
                                 os.rename(cloud_dir, backup_path)
                             except OSError as e:
                                 print(f"Backup failed (files might be in use): {e}")
-                                self.progress.emit("Backup failed: Close folder!")
-                                raise Exception(f"Could not backup {cloud_dir}. Please ensure it is not open in any terminal or explorer.")
+                                self.progress.emit("备份失败：请关闭占用文件夹！")
+                                self.finished.emit()
+                                return
                         else:
                             # Empty directory, safe to remove so clone works or just clone into it (git clone works on empty dir?)
                             # Standard git clone works if dir is empty.
                             pass
                     
                     print(f"Cloning {manifest_url} to {cloud_dir}")
-                    self.progress.emit("Cloning repository...")
-                    subprocess.check_call(['git', 'clone', manifest_url, cloud_dir])
+                    self.progress.emit("正在克隆仓库...")
+                    self.progress_value.emit(30)
+                    subprocess.run(['git', 'clone', manifest_url, cloud_dir], check=True, timeout=60)
                     
             except Exception as e:
                 print(f"Git operation failed: {e}")
-                self.progress.emit(f"Git failed: {e}")
+                self.progress.emit(f"Git 操作失败: {e}")
             
             # After Git Sync: NO COPY needed as main.py now scans cloud dir directly
             # This prevents duplicate files (one in cloud, one in sounds)
+            self.progress_value.emit(100)
             self.finished.emit()
             return
 
@@ -239,14 +245,23 @@ class DownloadWorker(QtCore.QObject):
         # Increase workers significantly since IO bound
         max_workers = 20  
         
+        files_done = 0
+        self.progress_value.emit(0)
+
         with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
-            futures = []
-            for index, item in enumerate(files):
-                futures.append(executor.submit(self.download_file, item, index, total_files))
+            futures = {executor.submit(self.download_file, item, index, total_files): item for index, item in enumerate(files)}
             
-            # Wait for all to complete
-            concurrent.futures.wait(futures)
+            for future in concurrent.futures.as_completed(futures):
+                files_done += 1
+                percent = int((files_done / total_files) * 100)
+                self.progress_value.emit(percent)
+                # Ensure exceptions are raised if any
+                try:
+                    future.result()
+                except Exception as exc:
+                    print(f"File download generated an exception: {exc}")
         
+        self.progress_value.emit(100)
         self.finished.emit()
 
 class DownloadManager(QtWidgets.QWidget):
@@ -267,14 +282,21 @@ class DownloadManager(QtWidgets.QWidget):
         
         # 简单的进度显示 (可选)
         # Simple progress display (optional)
-        self.setWindowTitle("Updating Resources...")
-        self.resize(300, 100)
-        self.label = QtWidgets.QLabel("Moe moe kyunkyunnnnnnn↝", self)
+        self.setWindowTitle("资源更新")
+        self.resize(350, 120)
+        self.label = QtWidgets.QLabel("正在初始化...", self)
         self.label.setAlignment(QtCore.Qt.AlignCenter)
+        
+        self.progress_bar = QtWidgets.QProgressBar(self)
+        self.progress_bar.setRange(0, 100)
+        self.progress_bar.setValue(0)
+        
         layout = QtWidgets.QVBoxLayout(self)
         layout.addWidget(self.label)
+        layout.addWidget(self.progress_bar)
         
         self.worker.progress.connect(self.label.setText)
+        self.worker.progress_value.connect(self.progress_bar.setValue)
 
     def start(self):
         self.show()

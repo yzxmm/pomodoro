@@ -44,27 +44,29 @@ This document lists all the resource files required for the official release. Pl
 | `colon.png` | 冒号 (:) | 与数字高度匹配 | PNG透明背景 |
 | `infinite.png` | 无穷符号 (∞) | 与数字高度匹配 | PNG透明背景 (用于本轮结束自动退出时的休息时间显示) |
 
-## 4. 核心音效 (Core Sounds)
+## 4. 音效资源 (Sound Assets)
 **存放目录 / Directory:** `sounds/`
 
-| 文件名 (Filename) | 描述 (Description) | 格式 |
-| :--- | :--- | :--- |
-| `start.mp3` | **开始工作**提示音 | MP3 |
-| `end.mp3` | **工作结束**提示音 | MP3 |
-| `rest_start.mp3` | **开始休息**提示音 | MP3 |
-| `interval.mp3` | **定时提醒** (如每10分钟) | MP3 |
-| `resume.mp3` | **继续工作**提示音 | MP3 |
-| `exit.mp3` | **退出程序**提示音 | MP3 |
+所有音效文件都存放在 `sounds` 目录下对应的分类文件夹中。
 
-## 5. 随机语音池 (Random Voice Pools)
-**存放目录 / Directory:** `sounds/random/`
-*在对应目录下放入多个 `.mp3` 文件，软件将随机播放。*
+### 基础结构
+你可以直接放入单个文件，或者创建文件夹放入多个文件（程序会随机播放）。
 
-- `start/` : 开始工作
-- `end/` : 工作结束
-- `interval/` : 定时提醒 (间隔语音)
-- `resume/` : 继续工作
-- `exit/` : 退出程序
+| 分类 (Category) | 文件夹路径 (Folder Path) | 备用单文件 (Legacy Single File) | 描述 (Description) |
+| :--- | :--- | :--- | :--- |
+| **开始工作** | `sounds/start/` | `sounds/start.mp3` | 开始工作提示音 |
+| **工作结束** | `sounds/end/` | `sounds/end.mp3` | 工作结束提示音 |
+| **定时提醒** | `sounds/interval/` | `sounds/interval.mp3` | 间隔提醒 (如每10分钟) |
+| **继续工作** | `sounds/resume/` | `sounds/resume.mp3` | 暂停后继续工作 |
+| **退出程序** | `sounds/exit/` | `sounds/exit.mp3` | 退出程序提示音 |
+
+*注：如果文件夹中有多个文件，每次触发时会随机播放其中一个。如果文件夹为空，会尝试寻找同名的 `.mp3` 单文件。*
+
+### 高级用法 (季节与标签)
+你可以在分类文件夹中创建子文件夹来实现季节或标签分类：
+
+- **季节/节日**: `sounds/start/winter/`
+- **标签**: `sounds/start/tags/miku/` (使用 `POMODORO_TAG=miku` 激活)
 
 ---
 ### 云端资源 (Cloud Resources)

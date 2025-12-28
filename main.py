@@ -22,12 +22,28 @@ def base_dir():
     return os.path.dirname(os.path.abspath(__file__))
 
 
+def resolve_path(subfolder, *parts):
+    # 1. Check external (user override)
+    external = os.path.join(base_dir(), subfolder, *parts)
+    if os.path.exists(external):
+        return external
+    
+    # 2. Check bundled (PyInstaller _MEIPASS)
+    if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
+        bundled = os.path.join(sys._MEIPASS, subfolder, *parts)
+        if os.path.exists(bundled):
+            return bundled
+            
+    # 3. Return external as default
+    return external
+
+
 def asset_path(*parts):
-    return os.path.join(base_dir(), "assets", *parts)
+    return resolve_path("assets", *parts)
 
 
 def sound_path(*parts):
-    return os.path.join(base_dir(), "sounds", *parts)
+    return resolve_path("sounds", *parts)
 
 
 def resolve_asset(name):
@@ -47,6 +63,7 @@ class TimerWidget(QtWidgets.QWidget):
         self.setFocusPolicy(QtCore.Qt.StrongFocus)
         
         self.main_window = parent
+        self.flipped = False
         
         # Time Label
         self.time_label = QtWidgets.QLabel(self)
@@ -158,6 +175,8 @@ class TimerWidget(QtWidgets.QWidget):
             
             lbl = self.digit_labels[0]
             lbl.show()
+            if self.flipped:
+                pm = pm.transformed(QtGui.QTransform().rotate(180))
             lbl.setPixmap(pm)
             lbl.setScaledContents(True)
             
@@ -184,10 +203,15 @@ class TimerWidget(QtWidgets.QWidget):
             return
 
         chars = [text[0], text[1], ":", text[3], text[4]]
+        if self.flipped:
+            chars = reversed(chars) # Reverse char order for 180 flip
+
         pixmaps = []
         for ch in chars:
             p = self.digit_path(ch)
             pm = QtGui.QPixmap(p)
+            if self.flipped and not pm.isNull():
+                pm = pm.transformed(QtGui.QTransform().rotate(180))
             pixmaps.append(pm if not pm.isNull() else QtGui.QPixmap())
         
         container_w = self.width()
@@ -386,9 +410,32 @@ class PomodoroWidget(QtWidgets.QWidget):
         self.image_label = QtWidgets.QLabel(self)
         self.image_label.setAlignment(QtCore.Qt.AlignCenter)
         self.image_label.setScaledContents(True)
-        self.image_label.setAttribute(QtCore.Qt.WA_TransparentForMouseEvents, True)
+        # self.image_label.setAttribute(QtCore.Qt.WA_TransparentForMouseEvents, True) # Removed to allow right-click menu
 
         pix = QtGui.QPixmap(resolve_asset("idle.png"))
+        if pix.isNull():
+            # Fallback if image fails to load
+            self.image_label.setStyleSheet("background-color: rgba(0, 0, 0, 100); color: white; border: 2px dashed white;")
+            self.image_label.setText("Image Missing")
+        
+        # System Tray Icon
+        self.tray_icon = QtWidgets.QSystemTrayIcon(self)
+        icon_path = resolve_asset("icon.png")
+        if not os.path.exists(icon_path):
+             icon_path = resolve_asset("icons/icon.png")
+        
+        if os.path.exists(icon_path):
+            self.tray_icon.setIcon(QtGui.QIcon(icon_path))
+        else:
+            self.tray_icon.setIcon(self.style().standardIcon(QtWidgets.QStyle.SP_ComputerIcon))
+            
+        tray_menu = QtWidgets.QMenu()
+        show_action = tray_menu.addAction("显示/隐藏")
+        show_action.triggered.connect(lambda: self.hide() if self.isVisible() else self.show())
+        quit_action = tray_menu.addAction("退出")
+        quit_action.triggered.connect(QtWidgets.QApplication.quit)
+        self.tray_icon.setContextMenu(tray_menu)
+        self.tray_icon.show()
         
         # Determine initial size
         # Adaptive Size Logic:
@@ -460,6 +507,7 @@ class PomodoroWidget(QtWidgets.QWidget):
         self.drag_start_y = 0
         self.duration_start = self.work_duration
         self.exit_on_work_end = False
+        self.is_flipped = False
 
         self.animation_frames = []
         self.current_frame_index = 0
@@ -488,13 +536,19 @@ class PomodoroWidget(QtWidgets.QWidget):
         self.holiday_pools = {}
         self.ten_voice_enabled = self.env_flag_enabled('POMODORO_TEN_ENABLE', default=True)
         self.voice_interval_minutes = 10
+        
+        # Cheat Code Buffer
+        self.cheat_buffer = ""
+        self.cheat_timer = QtCore.QTimer(self)
+        self.cheat_timer.setInterval(5000) # Reset buffer after 5 seconds of inactivity
+        self.cheat_timer.setSingleShot(True)
+        self.cheat_timer.timeout.connect(self.reset_cheat_buffer)
+        
+        self.load_calendar_config()
         self.build_sound_pool()
         self.update_sounds_async()
 
         self.load_settings()
-
-        # Check for holiday greeting (delayed to ensure app is ready)
-        QtCore.QTimer.singleShot(2000, self.check_holiday_greeting)
 
         self.dragging = False
         self.drag_offset = QtCore.QPoint()
@@ -518,8 +572,12 @@ class PomodoroWidget(QtWidgets.QWidget):
             self.resume_button.setText("继续")
             self.resume_button.setStyleSheet("background: rgba(0,0,0,0.3); color: white; padding:6px; border-radius:6px; font-size: 24px;")
         self.resume_button.hide()
-        self.resume_button.mousePressEvent = lambda e: (self.start_or_resume() if e.button() == QtCore.Qt.LeftButton else e.ignore())
-        self.resume_offset_y_ratio = 0.08
+        # self.image_label was already initialized at the beginning of __init__
+        # Do not re-initialize it here, otherwise the loaded image will be lost.
+        
+        # Ensure image label fills the window initially
+        self.image_label.setGeometry(0, 0, self.width(), self.height())
+        self.image_label.lower()
 
         self.start_button = QtWidgets.QPushButton("开始", self)
         s_icon = resolve_asset("start_btn.png")
@@ -537,6 +595,8 @@ class PomodoroWidget(QtWidgets.QWidget):
         
         # Ensure correct stacking order
         self.image_label.lower()
+        self.timer_widget.raise_()
+        self.start_button.raise_()
 
         self.place_start_button()
 
@@ -561,6 +621,65 @@ class PomodoroWidget(QtWidgets.QWidget):
                  new_h = int(self.height() * 0.6)
                  self.resize(new_w, new_h)
                  self.image_label.setGeometry(0, 0, new_w, new_h)
+        
+        # Initial icon update
+        self.update_app_icon()
+        
+        # Check for holiday greeting (delayed to ensure app is ready)
+        # Note: update_app_icon is also called inside check_holiday_greeting
+        QtCore.QTimer.singleShot(2000, self.check_holiday_greeting)
+
+    def update_app_icon(self):
+        """Update application icon based on active holidays or seasons."""
+        icon_path = None
+        
+        # Helper to check for icon in assets/icons/ folder
+        def get_icon_path(name):
+            # Try assets/icons/name.png
+            p = resolve_asset(f"icons/{name}.png")
+            if os.path.exists(p):
+                return p
+            # Fallback to old style assets/icon_name.png (optional, but good for compatibility)
+            p = resolve_asset(f"icon_{name}.png")
+            if os.path.exists(p):
+                return p
+            return None
+
+        # 1. Check Holidays (Priority)
+        holidays = self.get_active_holidays()
+        if holidays:
+            # Try finding an icon for the first active holiday
+            # e.g. assets/icons/birthday.png
+            for h in holidays:
+                p = get_icon_path(h)
+                if p:
+                    icon_path = p
+                    break
+        
+        # 2. Check Seasons (Secondary)
+        if not icon_path:
+            seasons = self.get_active_seasons()
+            if seasons:
+                for s in seasons:
+                    p = get_icon_path(s)
+                    if p:
+                        icon_path = p
+                        break
+        
+        # 3. Default
+        if not icon_path:
+            # Try assets/icons/default.png or assets/icons/icon.png
+            p = resolve_asset("icons/default.png")
+            if not os.path.exists(p):
+                p = resolve_asset("icons/icon.png")
+            if not os.path.exists(p):
+                p = resolve_asset("icon.png")
+            
+            if os.path.exists(p):
+                icon_path = p
+            
+        if icon_path and os.path.exists(icon_path):
+            self.setWindowIcon(QtGui.QIcon(icon_path))
 
     def place_time_label(self):
         # Update timer widget config if needed
@@ -612,7 +731,136 @@ class PomodoroWidget(QtWidgets.QWidget):
         self.resume_button.setGeometry(rx, ry, bw, bh)
         self.resume_button.raise_()
 
+    def reset_cheat_buffer(self):
+        self.cheat_buffer = ""
+
+    def reset_timer_state(self):
+        """Reset timer to initial state without deleting settings."""
+        if hasattr(self, 'context_menu') and self.context_menu:
+            self.context_menu.close()
+
+        if self.is_flipped:
+            self.toggle_flip() # Reset flip state if active
+            
+        self.tick_timer.stop()
+        self.phase = "idle"
+        self.paused = False
+        self.elapsed = 0
+        self.start_button.show()
+        self.resume_button.hide()
+        
+        # Reset text
+        self.set_time_text(self.format_time(self.work_duration))
+        
+        # Apply idle visuals
+        self.apply_phase_visuals()
+        
+        # Clear sound queue
+        self.sound_queue.clear()
+        self.player.stop()
+
+    def check_cheat_code(self):
+        cmd = self.cheat_buffer.lower()
+        if cmd.endswith("/remake"):
+            self.reset_timer_state()
+            self.cheat_buffer = ""
+            if self.menu_overlay:
+                self.menu_overlay.close()
+            return
+        if cmd.endswith("/666"):
+            self.toggle_flip()
+            self.cheat_buffer = ""
+            if self.menu_overlay:
+                self.menu_overlay.close()
+            return
+        if "/bir" in cmd:
+            # Clean up command for easier parsing (allow spaces)
+            clean_cmd = cmd.replace(" ", "")
+            if "/bir" in clean_cmd:
+                idx = clean_cmd.rfind("/bir")
+                suffix = clean_cmd[idx+4:]
+                if len(suffix) >= 4 and suffix[:4].isdigit():
+                    self.set_birthday(suffix[:4])
+                    self.cheat_buffer = ""
+                    if self.menu_overlay:
+                        self.menu_overlay.close()
+                    return
+
+    def toggle_flip(self):
+        self.is_flipped = not self.is_flipped
+        if hasattr(self, 'timer_widget'):
+            self.timer_widget.flipped = self.is_flipped
+            # Force update timer display
+            self.timer_widget.show_digit_time(self.time_label.text() if hasattr(self, 'time_label') else self.format_time(self.work_duration if self.phase == "working" else (self.rest_duration if self.phase == "rest" else self.work_duration)))
+            # Actually we don't track current text in main_window except when updating.
+            # But timer_widget has 'set_time_text'. We need to re-trigger it.
+            # We can just call update_animation which will eventually refresh visuals, but timer text needs explicit refresh.
+            # Best way: Read current text from timer_widget labels? No.
+            # Recalculate text based on state.
+            
+            # Simple hack: force refresh based on elapsed/duration
+            remaining = 0
+            if self.phase == "working":
+                remaining = max(0, self.work_duration - self.elapsed)
+            elif self.phase == "rest":
+                remaining = max(0, self.rest_duration - self.elapsed)
+            else:
+                remaining = self.work_duration # Idle
+            
+            if self.exit_on_work_end and self.phase == "rest":
+                 self.set_time_text("INF")
+            else:
+                 self.set_time_text(self.format_time(remaining))
+
+        # Reload animation frames to apply rotation
+        self.load_animation_frames(self.current_anim_type, force_static=self.current_anim_static)
+        # Force update current frame
+        if self.animation_frames:
+            self.image_label.setPixmap(self.animation_frames[self.current_frame_index])
+
+    def reset_settings(self):
+        settings_path = os.path.join(base_dir(), "settings.json")
+        if os.path.exists(settings_path):
+            try:
+                os.remove(settings_path)
+            except:
+                pass
+        QtCore.QProcess.startDetached(sys.executable, sys.argv)
+        QtWidgets.QApplication.quit()
+
+    def set_birthday(self, date_str):
+        self.birthday = date_str
+        self.save_settings()
+        # self.play_category('start') 
+        self.update_app_icon() 
+
     def keyPressEvent(self, event):
+        text = event.text()
+        
+        # Check if we are currently buffering a cheat code
+        if self.cheat_buffer:
+            # If Enter/Return is pressed, try to execute the command
+            if event.key() == QtCore.Qt.Key_Return or event.key() == QtCore.Qt.Key_Enter:
+                self.check_cheat_code()
+                self.cheat_buffer = "" # Reset buffer after execution attempt
+                event.accept()
+                return
+            
+            # Continue buffering valid characters
+            if text and text.isprintable():
+                self.cheat_buffer += text
+                self.cheat_timer.start()
+                event.accept()
+                return
+
+        # Start buffering if '/' is pressed and not currently buffering
+        if text == '/':
+            self.cheat_buffer = text
+            self.cheat_timer.start()
+            event.accept()
+            return
+
+        # Normal shortcut handling (Space for Pause/Resume)
         if event.key() == QtCore.Qt.Key_Space and self.isActiveWindow():
             if self.phase == "idle":
                 self.start_or_resume()
@@ -789,7 +1037,7 @@ class PomodoroWidget(QtWidgets.QWidget):
                 return
             self.phase = "rest"
             self.elapsed = 0
-            self.play_sound("rest_start.mp3")
+            # self.play_sound("rest_start.mp3") # User confirmed this resource does not exist
             self.apply_phase_visuals()
         elif self.phase == "rest" and self.elapsed >= self.rest_duration:
             self.phase = "working"
@@ -903,6 +1151,13 @@ class PomodoroWidget(QtWidgets.QWidget):
         if not loaded and not force_static:
              loaded = load_single(anim_type)
 
+        # Apply flip if needed
+        if self.is_flipped:
+            new_frames = []
+            for pix in self.animation_frames:
+                new_frames.append(pix.transformed(QtGui.QTransform().rotate(180)))
+            self.animation_frames = new_frames
+
         # Final fallbacks (cross-type)
         if not self.animation_frames:
              # Try opposite type
@@ -973,6 +1228,37 @@ class PomodoroWidget(QtWidgets.QWidget):
 
 
 
+    def load_calendar_config(self):
+        config_path = os.path.join(base_dir(), "calendar_config.json")
+        default_config = {
+            "seasons": [
+                {"id": "spring", "months": [3, 4, 5]},
+                {"id": "summer", "months": [6, 7, 8]},
+                {"id": "autumn", "months": [9, 10, 11]},
+                {"id": "winter", "months": [12, 1, 2]},
+                {"id": "winter_vacation", "months": [1, 2]},
+                {"id": "summer_vacation", "months": [7, 8]}
+            ],
+            "holidays": [
+                {"id": "christmas", "month": 12, "days": [24, 25, 26]}
+            ]
+        }
+        
+        self.calendar_config = default_config
+        
+        if os.path.exists(config_path):
+            try:
+                with open(config_path, "r", encoding="utf-8") as f:
+                    user_config = json.load(f)
+                    if user_config:
+                        # Allow partial override? No, replace sections if they exist.
+                        if "seasons" in user_config:
+                            self.calendar_config["seasons"] = user_config["seasons"]
+                        if "holidays" in user_config:
+                            self.calendar_config["holidays"] = user_config["holidays"]
+            except Exception as e:
+                print(f"Failed to load calendar config: {e}")
+
     def load_settings(self):
         settings_path = os.path.join(base_dir(), "settings.json")
         if not os.path.exists(settings_path):
@@ -989,6 +1275,7 @@ class PomodoroWidget(QtWidgets.QWidget):
                 self.check_updates_enabled = data.get("check_updates_enabled", True)
                 self.sounds_update_url = data.get("sounds_update_url", "")
                 self.last_greeting_date = data.get("last_greeting_date", "")
+                self.birthday = data.get("birthday", "")
                 self.setWindowFlag(QtCore.Qt.WindowStaysOnTopHint, self.always_on_top)
                 if hasattr(self, 'timer_widget'):
                     self.timer_widget.setWindowFlag(QtCore.Qt.WindowStaysOnTopHint, self.always_on_top)
@@ -1021,6 +1308,7 @@ class PomodoroWidget(QtWidgets.QWidget):
             "check_updates_enabled": getattr(self, "check_updates_enabled", True),
             "sounds_update_url": getattr(self, "sounds_update_url", ""),
             "last_greeting_date": getattr(self, "last_greeting_date", ""),
+            "birthday": getattr(self, "birthday", ""),
             "layout_config": self.layout_config,
             "x": self.x(),
             "y": self.y(),
@@ -1039,11 +1327,11 @@ class PomodoroWidget(QtWidgets.QWidget):
         if event.button() == QtCore.Qt.LeftButton:
             if not self.adjusting_duration:
                 self.dragging = True
-                self.drag_offset = event.globalPos() - self.frameGeometry().topLeft()
+                self.drag_offset = event.globalPosition().toPoint() - self.frameGeometry().topLeft()
                 event.accept()
         elif event.button() == QtCore.Qt.RightButton:
             # Force show menu on right click
-            self.menu_overlay.show_at(event.globalPos())
+            self.menu_overlay.show_at(event.globalPosition().toPoint())
             event.accept()
             return
             
@@ -1051,7 +1339,7 @@ class PomodoroWidget(QtWidgets.QWidget):
 
     def mouseMoveEvent(self, event):
         if self.dragging and event.buttons() & QtCore.Qt.LeftButton:
-            self.move(event.globalPos() - self.drag_offset)
+            self.move(event.globalPosition().toPoint() - self.drag_offset)
             event.accept()
         super().mouseMoveEvent(event)
 
@@ -1120,7 +1408,10 @@ class PomodoroWidget(QtWidgets.QWidget):
         self.save_settings()
 
     def contextMenuEvent(self, event: QtGui.QContextMenuEvent):
+        # self.menu_overlay.show_at(event.globalPos())
         self.menu_overlay.show_at(event.globalPos())
+        # The menu_overlay (ImageMenu) will take focus and forward keys to us.
+
 
     def toggle_always_on_top(self):
         self.always_on_top = not self.always_on_top
@@ -1152,6 +1443,8 @@ class PomodoroWidget(QtWidgets.QWidget):
             
             # Hide the window immediately (looks like it closed)
             self.hide()
+            if hasattr(self, 'menu_overlay') and self.menu_overlay:
+                self.menu_overlay.close()
             if hasattr(self, 'timer_widget'):
                 self.timer_widget.hide()
                 self.timer_widget.close()
@@ -1227,23 +1520,21 @@ class PomodoroWidget(QtWidgets.QWidget):
         season_pool = []
         holiday_pool = []
 
-        # Get Season Sounds
-        season = None
-        try:
-            season = self.current_season()
-        except Exception:
-            season = None
-        
+        # Get Season Sounds (Multiple seasons supported)
+        active_seasons = self.get_active_seasons()
         spools = self.seasonal_pools.get(category, {})
-        sp = spools.get((season or '').lower(), [])
-        if sp:
-            season_pool.extend(sp)
+        
+        for s in active_seasons:
+            sp = spools.get(s, [])
+            if sp:
+                season_pool.extend(sp)
 
-        # Get Holiday Sounds
-        h = self.current_holiday()
-        if h:
+        # Get Holiday Sounds (Multiple holidays supported)
+        active_holidays = self.get_active_holidays()
+        
+        for h in active_holidays:
             # From seasonal_pools (e.g. random/start/christmas)
-            hp = spools.get(h.lower(), [])
+            hp = spools.get(h, [])
             if hp:
                 holiday_pool.extend(hp)
             
@@ -1266,7 +1557,7 @@ class PomodoroWidget(QtWidgets.QWidget):
         if self.holiday_play_state['date'] != today_str:
             self.holiday_play_state = {'date': today_str, 'cats': set()}
             
-        if h and holiday_pool:
+        if active_holidays and holiday_pool:
             if category not in self.holiday_play_state['cats']:
                 # First time today for this category -> Exclusive Holiday
                 final_pool = holiday_pool
@@ -1316,23 +1607,45 @@ class PomodoroWidget(QtWidgets.QWidget):
         base_parent = os.path.join(os.path.dirname(base_dir()), 'sounds')
         # 分类目录
         for root in (base_local, base_parent):
-            add_dir_to(self.pool_start, os.path.join(root, 'random', 'start'))
-            add_dir_to(self.pool_end, os.path.join(root, 'random', 'end'))
-            add_dir_to(self.pool_interval, os.path.join(root, 'random', 'interval'))
-            add_dir_to(self.pool_resume, os.path.join(root, 'random', 'resume'))
-            add_dir_to(self.pool_exit, os.path.join(root, 'random', 'exit'))
+            # NEW: Merge 'random' into root categories.
+            # Support sounds/start/*.mp3 AND sounds/start.mp3 (legacy)
+            
+            # 1. Scan folders like sounds/start/
+            add_dir_to(self.pool_start, os.path.join(root, 'start'))
+            add_dir_to(self.pool_end, os.path.join(root, 'end'))
+            add_dir_to(self.pool_interval, os.path.join(root, 'interval'))
+            add_dir_to(self.pool_resume, os.path.join(root, 'resume'))
+            add_dir_to(self.pool_exit, os.path.join(root, 'exit'))
+
+            # 2. Check for legacy single files like sounds/start.mp3 and add to pool
+            for cat, pool in [
+                ('start', self.pool_start), 
+                ('end', self.pool_end), 
+                ('interval', self.pool_interval), 
+                ('resume', self.pool_resume), 
+                ('exit', self.pool_exit)
+            ]:
+                single_file = os.path.join(root, f"{cat}.mp3")
+                if os.path.exists(single_file) and single_file not in pool:
+                    pool.append(single_file)
+
             for cat in ('start', 'end', 'interval', 'resume', 'exit'):
-                base_cat = os.path.join(root, 'random', cat)
+                base_cat = os.path.join(root, cat)
                 if os.path.exists(base_cat):
                     for s in os.listdir(base_cat):
                         sp = os.path.join(base_cat, s)
                         if os.path.isdir(sp):
+                            # Skip 'tags' as it is reserved
+                            if s.lower() == 'tags':
+                                continue
+                                
                             key = s.lower()
                             self.seasonal_pools[cat].setdefault(key, [])
                             for fn in os.listdir(sp):
                                 if fn.lower().endswith(('.mp3', '.wav', '.ogg')):
                                     self.seasonal_pools[cat][key].append(os.path.join(sp, fn))
-                tags_cat = os.path.join(root, 'random', cat, 'tags')
+                                    
+                tags_cat = os.path.join(root, cat, 'tags')
                 if os.path.exists(tags_cat):
                     for t in os.listdir(tags_cat):
                         tp = os.path.join(tags_cat, t)
@@ -1376,7 +1689,7 @@ class PomodoroWidget(QtWidgets.QWidget):
                                 for fn in os.listdir(tp):
                                     if fn.lower().endswith(('.mp3', '.wav', '.ogg')):
                                         self.tag_pools[cat][key].append(os.path.join(tp, fn))
-            
+                                    
         # 通用兜底池，支持未分类文件
         add_dir_to(self.random_pool, os.path.join(base_local, 'random'))
         add_dir_to(self.random_pool, os.path.join(base_parent, 'random'))
@@ -1494,50 +1807,76 @@ class PomodoroWidget(QtWidgets.QWidget):
                 print(f"Update check failed: {e}")
         threading.Thread(target=worker, daemon=True).start()
 
-    def current_season(self):
+    def get_active_seasons(self):
+        # Override via Env
         s = os.environ.get('POMODORO_SEASON', '').strip().lower()
         if s:
-            return s
-        m = time.localtime().tm_mon
-        if m in (3, 4, 5):
-            return 'spring'
-        if m in (6, 7, 8):
-            return 'summer'
-        if m in (9, 10, 11):
-            return 'autumn'
-        return 'winter'
+            return [s]
 
-    def current_holiday(self):
+        active = []
+        d = QtCore.QDate.currentDate()
+        m = d.month()
+        
+        seasons = self.calendar_config.get("seasons", [])
+        for season in seasons:
+            if m in season.get("months", []):
+                active.append(season.get("id"))
+            
+        return active
+
+    def get_active_holidays(self):
+        active = []
         d = QtCore.QDate.currentDate()
         m = d.month()
         day = d.day()
         
-        # Christmas: Dec 24, 25, 26
-        if m == 12 and day in (24, 25, 26):
-            return 'christmas'
+        # Birthday Check
+        if hasattr(self, 'birthday') and self.birthday and len(self.birthday) == 4:
+             try:
+                 b_m = int(self.birthday[:2])
+                 b_d = int(self.birthday[2:])
+                 if m == b_m and day == b_d:
+                     active.append('birthday')
+             except:
+                 pass
+        
+        holidays = self.calendar_config.get("holidays", [])
+        for h in holidays:
+            if h.get("month") == m and day in h.get("days", []):
+                active.append(h.get("id"))
             
-        # Dec 28 Special Day
-        if m == 12 and day == 28:
-            return 'dec28'
-            
-        return None
+        return active
 
     def check_holiday_greeting(self):
-        h = self.current_holiday()
-        if not h:
+        # Update icon daily
+        self.update_app_icon()
+
+        holidays = self.get_active_holidays()
+        if not holidays:
             return
 
         today_str = QtCore.QDate.currentDate().toString("yyyy-MM-dd")
         last = getattr(self, 'last_greeting_date', "")
         
         if last != today_str:
-            # Play greeting
-            pool = self.holiday_pools.get(h, {}).get('greeting', [])
-            if not pool:
-                pool = self.holiday_pools.get(h, {}).get('common', [])
+            # Play greeting for the first active holiday found (Priority order: birthday > others)
+            # Since get_active_holidays appends in order, the first one is usually the most specific/important if we ordered well.
+            # But here we append birthday first, so it's priority 1.
             
-            if pool:
-                url = QtCore.QUrl.fromLocalFile(random.choice(pool))
+            # Find a pool that has greeting
+            greeting_pool = []
+            
+            for h in holidays:
+                 p = self.holiday_pools.get(h, {}).get('greeting', [])
+                 if not p:
+                     p = self.holiday_pools.get(h, {}).get('common', [])
+                 if p:
+                     greeting_pool.extend(p)
+            
+            if greeting_pool:
+                # Pick one from the mixed greeting pool (if multiple holidays)
+                # Or prioritize? Let's random mix.
+                url = QtCore.QUrl.fromLocalFile(random.choice(greeting_pool))
                 self.sound_queue.insert(0, url)
                 if self.player.playbackState() != QMediaPlayer.PlaybackState.PlayingState:
                     self.start_next_sound()

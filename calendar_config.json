@@ -1,0 +1,50 @@
+{
+    "seasons": [
+        {
+            "id": "spring",
+            "months": [3, 4, 5]
+        },
+        {
+            "id": "summer",
+            "months": [6, 7, 8]
+        },
+        {
+            "id": "autumn",
+            "months": [9, 10, 11]
+        },
+        {
+            "id": "winter",
+            "months": [12, 1, 2]
+        },
+        {
+            "id": "winter_vacation",
+            "months": [1, 2]
+        },
+        {
+            "id": "summer_vacation",
+            "months": [7, 8]
+        }
+    ],
+    "holidays": [
+        {
+            "id": "christmas",
+            "month": 12,
+            "days": [24, 25, 26]
+        },
+        {
+            "id": "new_year",
+            "month": 1,
+            "days": [1]
+        },
+        {
+            "id": "valentines",
+            "month": 2,
+            "days": [14]
+        },
+        {
+            "id": "halloween",
+            "month": 10,
+            "days": [31]
+        }
+    ]
+}

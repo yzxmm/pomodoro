@@ -1,5 +1,5 @@
 {
-    "work_duration": 2400,
+    "work_duration": 900,
     "rest_duration": 306,
     "always_on_top": false,
     "voice_interval_minutes": 10,
@@ -7,7 +7,8 @@
     "exit_voice_enabled": true,
     "check_updates_enabled": true,
     "sounds_update_url": "https://github.com/yzxmm/pomodoro-assets.git",
-    "last_greeting_date": "",
+    "last_greeting_date": "2025-12-28",
+    "birthday": "1228",
     "layout_config": {
         "timer_offset_x": -62,
         "timer_offset_y": 132,
@@ -17,8 +18,8 @@
         "time_w": 0.640495867768595,
         "time_h": 0.2975206611570248
     },
-    "x": 1785,
-    "y": 646,
+    "x": 2117,
+    "y": 520,
     "width": 242,
     "height": 242
 }
