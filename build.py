@@ -40,12 +40,25 @@ def main():
         print("[ERROR] Build failed.")
         return
 
-    # 4. Copy documentation
-    print("[INFO] Copying documentation...")
+    # 4. Copy documentation and external resources
+    print("[INFO] Copying external resources...")
     dest_dir = os.path.join("dist", "PomodoroWidget")
     if not os.path.exists(dest_dir):
         os.makedirs(dest_dir)
     
+    # Move the executable into the folder
+    exe_path = os.path.join("dist", "PomodoroWidget.exe")
+    if os.path.exists(exe_path):
+        shutil.move(exe_path, os.path.join(dest_dir, "PomodoroWidget.exe"))
+
+    # Copy sounds folder (External)
+    if os.path.exists("sounds"):
+        print("[INFO] Copying sounds folder...")
+        target_sounds = os.path.join(dest_dir, "sounds")
+        if os.path.exists(target_sounds):
+            shutil.rmtree(target_sounds)
+        shutil.copytree("sounds", target_sounds)
+
     # 优先复制 README.md 作为用户的使用说明
     if os.path.exists("README.md"):
         shutil.copy("README.md", os.path.join(dest_dir, "使用说明.md"))
@@ -55,7 +68,7 @@ def main():
 
     print("-" * 40)
     print("[SUCCESS] Build completed successfully!")
-    print(f"[INFO] Executable located at: {os.path.join('dist', 'PomodoroWidget', 'PomodoroWidget.exe')}")
+    print(f"[INFO] Executable located at: {os.path.join(dest_dir, 'PomodoroWidget.exe')}")
     print("-" * 40)
 
 if __name__ == "__main__":

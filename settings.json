@@ -1,25 +1,21 @@
 {
+    "width": 297,
+    "height": 297,
     "work_duration": 900,
     "rest_duration": 306,
-    "always_on_top": false,
-    "voice_interval_minutes": 10,
-    "exit_on_work_end": true,
-    "exit_voice_enabled": true,
-    "check_updates_enabled": true,
-    "sounds_update_url": "https://github.com/yzxmm/pomodoro-assets.git",
-    "last_greeting_date": "2025-12-28",
-    "birthday": "1228",
     "layout_config": {
-        "timer_offset_x": -62,
-        "timer_offset_y": 132,
-        "font_size": 42,
+        "timer_offset_x": 0,
+        "timer_offset_y": 177,
+        "font_size": 39,
         "time_x": 0.09090909090909091,
         "time_y": 0.5082644628099173,
         "time_w": 0.640495867768595,
-        "time_h": 0.2975206611570248
+        "time_h": 0.2975206611570248,
+        "menu_scale": 1.3370312551577601
     },
-    "x": 2117,
-    "y": 520,
-    "width": 242,
-    "height": 242
+    "always_on_top": true,
+    "birthday": "1228",
+    "check_updates_enabled": false,
+    "exit_voice_enabled": true,
+    "voice_interval_minutes": 30
 }

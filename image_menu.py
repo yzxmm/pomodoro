@@ -1,14 +1,6 @@
 from PySide6 import QtCore, QtGui, QtWidgets
 import os
-
-def base_dir():
-    import sys
-    if getattr(sys, 'frozen', False):
-        return os.path.dirname(sys.executable)
-    return os.path.dirname(os.path.abspath(__file__))
-
-def asset_path(*parts):
-    return os.path.join(base_dir(), "assets", *parts)
+from utils import base_dir, asset_path
 
 def resolve_menu_icon(name):
     local = asset_path("menu", name)

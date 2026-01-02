@@ -1,0 +1,94 @@
+# Global Project Requirements & Product Vision
+# 全局项目需求与产品愿景文档
+
+为了方便ai阅读，代码不要超过400行
+
+## 0. 产品定位 (Product Identity)
+**核心定位**: 面向主播粉丝的桌面陪伴型番茄钟 (Streamer Fan Companion Pomodoro Widget)。
+**关键词**: 陪伴感 (Companionship)、沉浸式 (Immersive)、ASMR/语音 (Voice/Audio)、高颜值 (Visuals)。
+
+### 设计原则 (Design Principles)
+1.  **沉浸感第一 (Immersion First)**:
+    - 必须是无边框、背景透明的异形窗口 (Character-based)。
+    - 拒绝使用原生系统丑陋的控件，所有菜单和按钮都应图形化/定制化。
+2.  **粉丝向体验 (Fan-Oriented)**:
+    - **语音互动**: 重视语音提醒 (Interval Voice)、节日问候 (Holiday Greetings)、退出语音。
+    - **彩蛋**: 保留作弊码 (Cheat Codes) 等隐藏互动功能。
+3.  **防误触 (Mistake-Proof)**:
+    - 考虑到用户可能一边看直播/玩游戏一边挂着，**严禁**简单的点击人物触发暂停（防止误操作）。
+    - 交互必须明确（如专门的按钮）。
+
+---
+
+## 1. 核心交互 (Core Interaction)
+- **点击人物 (Click Character)**: 
+  - **逻辑**: **仅聚焦窗口 (Focus Only)**。
+  - **禁止**: 严禁触发暂停/开始逻辑。防止用户在拖拽或无意点击时打断计时。
+- **拖动 (Drag)**: 
+  - 左键按住非按钮区域（人物身体）可自由拖动窗口。
+- **右键菜单 (Right Click Menu)**: 
+  - **触发**: 点击人物身体唤出。
+  - **层级**: 必须是 **独立顶层窗口 (Top-Level Window)**，保证永远显示在最顶层，不被人物遮挡。
+  - **缩放**: 默认比例需较大 (1.25x)，方便高分屏点击。
+  - **功能**: 包含暂停、置顶、音效设置等所有核心功能。
+  除了间隔播放语音选择以外，点击后消失，点击其他区域也会消失。
+
+## 2. 按钮逻辑 (Button Logic)
+- **开始按钮 (Start Button)**:
+  - **位置**: 右上角 (Top-Right)。
+  - **状态**: 仅在 Idle (空闲) 状态显示。
+  - **样式**: **仅图标 (Icon Only)**，无文字。
+- **暂停按钮 (Pause Button)**:
+  - **状态**: **界面上不显示** (Hidden from UI)。
+  - **操作**: 用户需通过 **右键菜单** 或 **快捷键 (Space)** 暂停。
+  - **原因**: 保持界面极简，防止误触。
+- **继续按钮 (Resume Button)**:
+  - **位置**: 屏幕正中央 (Center)，醒目。
+  - **状态**: 仅在 **暂停 (Paused)** 状态下显示。
+  - **样式**: 大图标，明确提示用户当前已暂停。
+  - **点击后**: 触发继续计时逻辑。
+
+## 3. 缩放与布局 (Scaling & Layout)
+- **整体操作 (Global Scaling)**:
+  - **操作**: **Shift + 滚轮 (Wheel)**缩放全局大小。位置可以**Shift + 左键拖动**。
+  - **效果**: 窗口、人物、时间牌、按钮、菜单整体缩放。
+  - **稳定性**: 缩放过程中 **严禁闪烁 (No Flickering)**。
+- **时间牌操作 (Time Card Operations)**:
+  - **独立缩放**: **Ctrl + 滚轮 (Wheel)** (调整字体大小)。
+  - **位置调整**: **Ctrl + 左键拖动时间牌** (移动时间牌位置)。时间牌可以在屏幕任意拖动。
+  - **时间调整 (Time Adjustment)**:
+    - **前提**: 仅在 Idle (空闲) 或 Paused (暂停) 状态下可用。
+    - **拖动调节**: 直接左键按住时间牌 **水平/垂直拖动** 即可调整时长。水平：调整秒，垂直：调整分
+工作：最长1小时，最短10分钟
+休息：最短30秒，最长30分钟
+    - **模式切换**: 按 **Alt 键** 切换调节目标（工作时间 Work / 休息时间 Rest）。
+    - **快捷预设 (Double Click Zones)**:（双击人物+时间牌整体范围）
+        - **Work Mode**:
+            - Top 25%: 15 min
+            - 25-50%: 30 min
+            - 50-75%: 40 min
+            - Bottom 25%: 60 min
+        - **Rest Mode**:
+            - Top 25%: 5 min
+            - 25-50%: 10 min
+            - 50-75%: 15 min
+            - Bottom 25%: Toggle "Exit on Work End" (显示 INF 或时间)
+  - **核心地位**: 必须始终可见 (Always Visible)，缩放时相对位置不能飘移，且不能飞出屏幕。
+
+## 4. 音频系统 (Audio System)
+- **分类 (Categories)**: Start, End, Interval, Resume, Exit, Random.
+- **节日/季节支持 (Holiday/Season)**: 自动检测日期，优先播放节日/季节限定语音。
+- **更新机制**: 支持通过 Git 自动更新音效库。
+
+## 5. 托盘与图标 (Tray & Icons)
+- **动态图标**: 根据当前节日/季节自动切换应用图标 (Tray Icon & Window Icon)。
+- **托盘菜单**: 提供显示/隐藏、退出功能。
+
+## 6. 其它功能 (Other Features)
+- **作弊码 (Cheat Codes)**: 
+  - `/surrender`: 投降 (Work Phase > 15m -> Quit App)。
+  - `/remake`: 重置计时器。
+  - `/666`: 翻转 (Flip)。
+  - `/birYYYY`: 设置生日年份。未设置时默认9999（不播放语音）
+- **配置持久化 (Persistence)**: 
+  - 保存: 窗口位置、整体缩放比例 (Scale Factor)、时间牌字体大小、音量、工作/休息时长偏好。
