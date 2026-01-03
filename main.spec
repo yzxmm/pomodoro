@@ -7,7 +7,6 @@ a = Analysis(
     pathex=[],
     binaries=[],
     datas=[
-        ('assets', 'assets'),
         ('calendar_config.json', '.'),
     ],
     hiddenimports=[],
@@ -29,7 +28,7 @@ exe = EXE(
     a.zipfiles,
     a.datas,
     [],
-    name='PomodoroWidget',
+    name='pmpmchan',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
@@ -42,5 +41,5 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon=None
+    icon='assets/icons/icon.ico'
 )

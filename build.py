@@ -42,14 +42,14 @@ def main():
 
     # 4. Copy documentation and external resources
     print("[INFO] Copying external resources...")
-    dest_dir = os.path.join("dist", "PomodoroWidget")
+    dest_dir = os.path.join("dist", "pmpmchan")
     if not os.path.exists(dest_dir):
         os.makedirs(dest_dir)
     
     # Move the executable into the folder
-    exe_path = os.path.join("dist", "PomodoroWidget.exe")
+    exe_path = os.path.join("dist", "pmpmchan.exe")
     if os.path.exists(exe_path):
-        shutil.move(exe_path, os.path.join(dest_dir, "PomodoroWidget.exe"))
+        shutil.move(exe_path, os.path.join(dest_dir, "pmpmchan.exe"))
 
     # Copy sounds folder (External)
     if os.path.exists("sounds"):
@@ -59,16 +59,24 @@ def main():
             shutil.rmtree(target_sounds)
         shutil.copytree("sounds", target_sounds)
 
+    # Copy assets folder (External)
+    if os.path.exists("assets"):
+        print("[INFO] Copying assets folder...")
+        target_assets = os.path.join(dest_dir, "assets")
+        if os.path.exists(target_assets):
+            shutil.rmtree(target_assets)
+        shutil.copytree("assets", target_assets)
+
     # 优先复制 README.md 作为用户的使用说明
     if os.path.exists("README.md"):
-        shutil.copy("README.md", os.path.join(dest_dir, "使用说明.md"))
+        shutil.copy("README.md", os.path.join(dest_dir, "使用说明.txt"))
     elif os.path.exists("FOLDER_STRUCTURE.md"):
          # Fallback
         shutil.copy("FOLDER_STRUCTURE.md", os.path.join(dest_dir, "文件夹结构说明.md"))
 
     print("-" * 40)
     print("[SUCCESS] Build completed successfully!")
-    print(f"[INFO] Executable located at: {os.path.join(dest_dir, 'PomodoroWidget.exe')}")
+    print(f"[INFO] Executable located at: {os.path.join(dest_dir, 'pmpmchan.exe')}")
     print("-" * 40)
 
 if __name__ == "__main__":

@@ -17,5 +17,5 @@
     "birthday": "1228",
     "check_updates_enabled": false,
     "exit_voice_enabled": true,
-    "voice_interval_minutes": 30
+    "voice_interval_minutes": 10
 }
