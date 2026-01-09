@@ -78,6 +78,11 @@
 ## 4. 音频系统 (Audio System)
 - **分类 (Categories)**: Start, End, Interval, Resume, Exit, Random.
 - **节日/季节支持 (Holiday/Season)**: 自动检测日期，优先播放节日/季节限定语音。
+- **特殊节日 (Special Holidays)**:
+  - 春节 `spring_festival`：按 `calendar_config.json` 配置日期启用，对应语音目录 `sounds/holidays/spring_festival/`，每日问候放在 `sounds/holidays/spring_festival/greeting/`。
+  - 儿童节 `children_day`：每年 06/01 启用，对应语音目录 `sounds/holidays/children_day/`，每日问候放在 `sounds/holidays/children_day/greeting/`。
+- **季节扩展 (Season Extensions)**:
+  - 国庆 `national_day`：每年 10/01 至 10/07 启用，对应语音目录 `sounds/random/{start,end,interval,resume,exit}/national_day/`。
 - **更新机制**: 支持通过 Git 自动更新音效库。
 
 ## 5. 托盘与图标 (Tray & Icons)
@@ -88,7 +93,11 @@
 - **作弊码 (Cheat Codes)**: 
   - `/surrender`: 投降 (Work Phase > 15m -> Quit App)。
   - `/remake`: 重置计时器。
-  - `/666`: 翻转 (Flip)。
+  - `/666`: 垂直翻转 (Flip)。
   - `/birYYYY`: 设置生日年份。未设置时默认9999（不播放语音）
 - **配置持久化 (Persistence)**: 
   - 保存: 窗口位置、整体缩放比例 (Scale Factor)、时间牌字体大小、音量、工作/休息时长偏好。
+
+## 7. 动画序列 (Animation Sequences)
+- **工作阶段 (Work Phase)**: 播放图像序列 e:\Pomodoro_Widget\pomodoro_git\assets\idle。
+- **休息阶段 (Rest Phase)**: 播放图像序列 e:\Pomodoro_Widget\pomodoro_git\assets\paused。

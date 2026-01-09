@@ -1,0 +1,15 @@
+<RCC version="1.0">
+  <qresource prefix="/menu">
+    <file>assets/menu/menu_bg.png</file>
+    <file>assets/menu/pause.png</file>
+    <file>assets/menu/exit.png</file>
+    <file>assets/menu/pin.png</file>
+    <file>assets/menu/update.png</file>
+    <file>assets/menu/exit_voice.png</file>
+    <file>assets/menu/interval_0.png</file>
+    <file>assets/menu/interval_10.png</file>
+    <file>assets/menu/interval_15.png</file>
+    <file>assets/menu/interval_30.png</file>
+    <file>assets/menu/check.png</file>
+  </qresource>
+</RCC>

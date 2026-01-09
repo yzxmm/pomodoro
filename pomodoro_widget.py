@@ -7,7 +7,7 @@ from PySide6.QtMultimedia import QMediaPlayer, QAudioOutput
 
 from image_menu import ImageMenu
 from timer_widget import TimerWidget
-from utils import base_dir, resolve_asset, sound_path
+from utils import base_dir, resolve_asset, sound_path, asset_path
 from download_manager import DownloadManager
 
 # Set this to False to disable layout editing features (drag/resize time label)
@@ -147,6 +147,9 @@ class PomodoroWidget(QtWidgets.QWidget):
         self.player.setAudioOutput(self.audio_output)
         self.audio_output.setVolume(1.0)
         self.player.playbackStateChanged.connect(self.on_playback_state_changed)
+        self.exit_quit_timer = QtCore.QTimer(self)
+        self.exit_quit_timer.setSingleShot(True)
+        self.exit_quit_timer.timeout.connect(QtWidgets.QApplication.quit)
         self.sound_queue = []
         self.pool_start = []
         self.pool_end = []
@@ -487,6 +490,7 @@ class PomodoroWidget(QtWidgets.QWidget):
     def get_active_seasons(self):
         today = QtCore.QDate.currentDate()
         m = today.month()
+        d = today.day()
         active = []
         
         # Check calendar config
@@ -495,8 +499,19 @@ class PomodoroWidget(QtWidgets.QWidget):
             for cfg in seasons:
                 sid = cfg.get("id")
                 months = cfg.get("months", [])
-                if sid and m in months:
+                if sid and isinstance(months, list) and m in months:
                     active.append(sid)
+                    continue
+                month = cfg.get("month")
+                if sid and isinstance(month, int) and m == month:
+                    days = cfg.get("days")
+                    if isinstance(days, list) and d in days:
+                        active.append(sid)
+                        continue
+                    start_day = cfg.get("start_day")
+                    end_day = cfg.get("end_day")
+                    if isinstance(start_day, int) and isinstance(end_day, int) and start_day <= d <= end_day:
+                        active.append(sid)
         
         # Fallback if no config or empty
         if not active:
@@ -637,9 +652,8 @@ class PomodoroWidget(QtWidgets.QWidget):
         btn_size = int(min_dim * 0.30)
         btn_size = max(60, min(160, btn_size))
         self.resume_button.setFixedSize(btn_size, btn_size)
-        margin = max(5, int(min(w, h) * 0.02))
-        rx = max(0, w - self.resume_button.width() - margin)
-        ry = margin
+        rx = max(0, int((w - self.resume_button.width()) / 2))
+        ry = max(0, int((h - self.resume_button.height()) / 2))
         self.resume_button.setGeometry(rx, ry, self.resume_button.width(), self.resume_button.height())
         self.resume_button.raise_()
 
@@ -667,13 +681,11 @@ class PomodoroWidget(QtWidgets.QWidget):
         if self.exit_voice_enabled and not self.closing:
             self.closing = True
             event.ignore()
-            self.hide() # Hide window immediately
+            self.hide()
             if self.timer_widget: self.timer_widget.close()
             if self.menu_overlay: self.menu_overlay.close()
             self.play_exit_sound()
-            
-            # Force quit after 3 seconds in case sound fails or is too long
-            QtCore.QTimer.singleShot(3000, QtWidgets.QApplication.quit)
+            self.exit_quit_timer.start(60000)
         else:
             if self.timer_widget: self.timer_widget.close()
             event.accept()
@@ -696,10 +708,31 @@ class PomodoroWidget(QtWidgets.QWidget):
         
         if path:
             self.player.setSource(QtCore.QUrl.fromLocalFile(path))
+            try:
+                self.player.mediaStatusChanged.disconnect(self.on_exit_sound_finished)
+            except Exception:
+                pass
+            try:
+                self.player.durationChanged.disconnect(self.on_exit_duration_changed)
+            except Exception:
+                pass
             self.player.mediaStatusChanged.connect(self.on_exit_sound_finished)
+            self.player.durationChanged.connect(self.on_exit_duration_changed)
             self.player.play()
         else:
             QtWidgets.QApplication.quit()
+    def on_exit_duration_changed(self, duration_ms):
+        try:
+            d = int(duration_ms or 0)
+        except Exception:
+            d = 0
+        if d <= 0:
+            return
+        quit_after = d + 500
+        quit_after = max(1500, min(120000, quit_after))
+        if self.exit_quit_timer.isActive():
+            self.exit_quit_timer.stop()
+        self.exit_quit_timer.start(quit_after)
 
     def on_exit_sound_finished(self, status):
         if status == QMediaPlayer.MediaStatus.EndOfMedia or status == QMediaPlayer.MediaStatus.InvalidMedia:
@@ -727,6 +760,8 @@ class PomodoroWidget(QtWidgets.QWidget):
             self.play_category('resume', default_file='resume.mp3')
             self.apply_phase_visuals()
         self.start_button.hide()
+        if getattr(self, 'menu_overlay', None):
+            self.menu_overlay.close()
         self.setFocus()
 
     def pause_timer(self):
@@ -734,6 +769,8 @@ class PomodoroWidget(QtWidgets.QWidget):
             self.tick_timer.stop()
             self.paused = True
             self.apply_phase_visuals()
+            if getattr(self, 'menu_overlay', None):
+                self.menu_overlay.close()
             self.setFocus()
 
     def on_tick(self):
@@ -785,21 +822,35 @@ class PomodoroWidget(QtWidgets.QWidget):
                          self.player.play()
 
     def apply_phase_visuals(self):
-        # Update image based on phase
-        img_name = "idle.png"
-        if self.paused: img_name = "paused.png"
-        elif self.phase == "working": img_name = "idle.png" # Assuming working uses idle anim/image
-        elif self.phase == "rest": img_name = "paused.png" # Assuming rest uses paused/rest image
-        
-        p = resolve_asset(img_name)
-        if os.path.exists(p):
-            self.image_label.setPixmap(QtGui.QPixmap(p))
-            
         if self.paused:
+            self.animation_timer.stop()
+            p = resolve_asset("paused.png")
+            if os.path.exists(p):
+                pm = QtGui.QPixmap(p)
+                if not pm.isNull():
+                    if self.is_flipped:
+                        t = QtGui.QTransform()
+                        t.scale(1, -1)
+                        pm = pm.transformed(t)
+                    self.image_label.setPixmap(pm)
             self.resume_button.show()
         else:
             self.resume_button.hide()
-            
+            if self.phase == "working":
+                self.set_animation("idle")
+            elif self.phase == "rest":
+                self.set_animation("paused")
+            else:
+                self.animation_timer.stop()
+                p = resolve_asset("idle.png")
+                if os.path.exists(p):
+                    pm = QtGui.QPixmap(p)
+                    if not pm.isNull():
+                        if self.is_flipped:
+                            t = QtGui.QTransform()
+                            t.scale(1, -1)
+                            pm = pm.transformed(t)
+                        self.image_label.setPixmap(pm)
         if self.phase == "idle":
             self.start_button.show()
         else:
@@ -809,7 +860,59 @@ class PomodoroWidget(QtWidgets.QWidget):
         pass
 
     def update_animation(self):
-        pass # Placeholder for animation logic
+        if not self.animation_frames:
+            return
+        self.current_frame_index = (self.current_frame_index + 1) % len(self.animation_frames)
+        pm = self.animation_frames[self.current_frame_index]
+        if self.is_flipped and not pm.isNull():
+            t = QtGui.QTransform()
+            t.scale(1, -1)
+            pm = pm.transformed(t)
+        self.image_label.setPixmap(pm)
+
+    def set_animation(self, anim_type):
+        frames = []
+        dir_path = asset_path(anim_type)
+        if os.path.isdir(dir_path):
+            files = [f for f in os.listdir(dir_path) if f.lower().endswith(".png")]
+            def key_fn(name):
+                try:
+                    base = os.path.splitext(name)[0]
+                    return int(base)
+                except:
+                    return name
+            files.sort(key=key_fn)
+            for f in files:
+                pm = QtGui.QPixmap(os.path.join(dir_path, f))
+                if not pm.isNull():
+                    frames.append(pm)
+        if not frames:
+            self.animation_timer.stop()
+            fallback = resolve_asset(f"{anim_type}.png")
+            if os.path.exists(fallback):
+                pm = QtGui.QPixmap(fallback)
+                if not pm.isNull():
+                    if self.is_flipped:
+                        t = QtGui.QTransform()
+                        t.scale(1, -1)
+                        pm = pm.transformed(t)
+                    self.image_label.setPixmap(pm)
+            self.animation_frames = []
+            self.current_frame_index = 0
+            self.current_anim_type = anim_type
+            self.current_anim_static = True
+            return
+        self.animation_frames = frames
+        self.current_frame_index = 0
+        self.current_anim_type = anim_type
+        self.current_anim_static = False
+        pm = self.animation_frames[0]
+        if self.is_flipped and not pm.isNull():
+            t = QtGui.QTransform()
+            t.scale(-1, 1)
+            pm = pm.transformed(t)
+        self.image_label.setPixmap(pm)
+        self.animation_timer.start()
 
     def reset_cheat_buffer(self):
         self.cheat_buffer = ""

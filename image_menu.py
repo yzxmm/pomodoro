@@ -1,6 +1,11 @@
 from PySide6 import QtCore, QtGui, QtWidgets
+from PySide6.QtUiTools import QUiLoader
 import os
 from utils import base_dir, asset_path
+try:
+    import resources_rc
+except Exception:
+    resources_rc = None
 
 def resolve_menu_icon(name):
     local = asset_path("menu", name)
@@ -14,42 +19,46 @@ class ImageMenu(QtWidgets.QFrame):
         super().__init__(owner)
         self.owner = owner
         self.ui_scale = 1.0
-        self.setWindowFlags(QtCore.Qt.Popup | QtCore.Qt.FramelessWindowHint)
+        self.ui_root = None
+        self.setWindowFlags(QtCore.Qt.Popup | QtCore.Qt.FramelessWindowHint | QtCore.Qt.WindowStaysOnTopHint)
+        self.setWindowFlag(QtCore.Qt.NoDropShadowWindowHint, True)
         self.setAttribute(QtCore.Qt.WA_TranslucentBackground, True)
-        self.setAttribute(QtCore.Qt.WA_StyledBackground, True)  # Ensure background is painted
-        self.setFocusPolicy(QtCore.Qt.StrongFocus)  # Ensure we can accept focus for cheat codes
-        self.setObjectName("ContextMenu")
+        self.setAttribute(QtCore.Qt.WA_StyledBackground, True)
+        self.setFocusPolicy(QtCore.Qt.StrongFocus)
+        self.setObjectName("ContextMenuHost")
         
-        # Check for menu background image
-        menu_bg = resolve_menu_icon("menu_bg.png")
-        if menu_bg and os.path.exists(menu_bg):
-             # Use background image
-             bg_path = menu_bg.replace('\\', '/')
-             self.setStyleSheet(f"""
-                #ContextMenu {{
-                    border-image: url({bg_path}) 0 0 0 0 stretch stretch;
-                    border: none;
-                    border-radius: 8px;
-                }}
-            """)
-        else:
-            # Fallback style
-            self.setStyleSheet("""
-                #ContextMenu {
-                    background-color: rgba(255, 255, 255, 0.95);
-                    border: 1px solid #ccc;
-                    border-radius: 8px;
-                }
-            """)
-
-        self.setup_ui()
+        # Apply background only when not using Designer UI
+        if not self.try_load_designer_ui():
+            menu_bg = resolve_menu_icon("menu_bg.png")
+            if menu_bg and os.path.exists(menu_bg):
+                 bg_path = menu_bg.replace('\\', '/')
+                 self.setStyleSheet(f"""
+                    #ContextMenuHost {{
+                        border-image: url({bg_path}) 0 0 0 0 stretch stretch;
+                        border: none;
+                        border-radius: 8px;
+                    }}
+                """)
+            else:
+                self.setStyleSheet("""
+                    #ContextMenuHost {
+                        background-color: rgba(255, 255, 255, 0.95);
+                        border: 1px solid #ccc;
+                        border-radius: 8px;
+                    }
+                """)
+            self.setup_ui()
         self.setMinimumWidth(int(250 * self.ui_scale))
 
     def set_scale(self, scale):
         self.ui_scale = scale
-        self.setup_ui()
-        self.refresh_controls()
-        self.adjustSize()
+        if self.ui_root:
+            self.refresh_controls()
+            self.adjustSize()
+        else:
+            self.setup_ui()
+            self.refresh_controls()
+            self.adjustSize()
 
     def paintEvent(self, event):
         opt = QtWidgets.QStyleOption()
@@ -61,6 +70,64 @@ class ImageMenu(QtWidgets.QFrame):
         # Forward key events to owner (PomodoroWidget) for cheat codes
         self.owner.keyPressEvent(event)
         super().keyPressEvent(event)
+    def resolve_ui_path(self, name):
+        p1 = os.path.join(base_dir(), name)
+        if os.path.exists(p1):
+            return p1
+        p2 = os.path.join(os.path.dirname(base_dir()), name)
+        if os.path.exists(p2):
+            return p2
+        return p1
+    def try_load_designer_ui(self):
+        try:
+            ui_path = self.resolve_ui_path("menu.ui")
+            if not os.path.exists(ui_path):
+                return False
+            loader = QUiLoader()
+            root_widget = loader.load(ui_path, self)
+            if not root_widget:
+                return False
+            if self.layout():
+                QtWidgets.QWidget().setLayout(self.layout())
+            layout = QtWidgets.QVBoxLayout(self)
+            layout.setContentsMargins(0, 0, 0, 0)
+            layout.setSpacing(0)
+            layout.addWidget(root_widget)
+            self.ui_root = root_widget
+            # Clear host background to avoid double backgrounds
+            self.setStyleSheet(" #ContextMenuHost { background: transparent; border: none; } ")
+            self.bind_ui_controls()
+            self.refresh_controls()
+            return True
+        except Exception:
+            return False
+    def bind_ui_controls(self):
+        def find_btn(name):
+            if self.ui_root:
+                b = self.ui_root.findChild(QtWidgets.QPushButton, name)
+                if b:
+                    return b
+            return None
+        self.btn_pause = find_btn("btn_pause") or QtWidgets.QPushButton("暂停", self)
+        self.btn_top = find_btn("btn_top") or QtWidgets.QPushButton("", self)
+        self.btn_interval = find_btn("btn_interval") or QtWidgets.QPushButton("间隔", self)
+        self.btn_exit = find_btn("btn_exit") or QtWidgets.QPushButton("退出", self)
+        self.btn_check_update = find_btn("btn_check_update") or QtWidgets.QPushButton("", self)
+        self.btn_exit_voice = find_btn("btn_exit_voice") or QtWidgets.QPushButton("", self)
+        for b in (self.btn_pause, self.btn_top, self.btn_interval, self.btn_exit, self.btn_check_update, self.btn_exit_voice):
+            try:
+                b.setText("")
+                b.setFlat(True)
+            except Exception:
+                pass
+        self.setup_btn(self.btn_pause, "pause.png", "暂停")
+        self.setup_btn(self.btn_exit, "exit.png", "退出")
+        self.btn_pause.clicked.connect(lambda: (self.owner.pause_timer(), self.close()))
+        self.btn_top.clicked.connect(lambda: (self.owner.toggle_always_on_top(), self.refresh_controls()))
+        self.btn_interval.clicked.connect(lambda: (self.owner.toggle_interval_voice(), self.refresh_controls()))
+        self.btn_exit.clicked.connect(lambda: (self.close(), self.owner.close()))
+        self.btn_check_update.clicked.connect(lambda: (self.owner.toggle_check_updates(), self.refresh_controls()))
+        self.btn_exit_voice.clicked.connect(lambda: (self.owner.toggle_exit_voice(), self.refresh_controls()))
     def setup_ui(self):
         # Clear existing layout
         if self.layout():
@@ -89,7 +156,7 @@ class ImageMenu(QtWidgets.QFrame):
         
         self.btn_exit = QtWidgets.QPushButton("退出", self)
         self.setup_btn(self.btn_exit, "exit.png", "退出")
-        self.btn_exit.clicked.connect(lambda: (self.close(), QtWidgets.QApplication.quit()))
+        self.btn_exit.clicked.connect(lambda: (self.close(), self.owner.close()))
 
         self.btn_interval = QtWidgets.QPushButton("间隔", self)
         self.btn_interval.clicked.connect(lambda: (self.owner.toggle_interval_voice(), self.refresh_controls()))

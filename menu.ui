@@ -1,0 +1,153 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>ContextMenu</class>
+ <widget class="QWidget" name="ContextMenu">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>357</width>
+    <height>272</height>
+   </rect>
+  </property>
+  <property name="minimumSize">
+   <size>
+    <width>250</width>
+    <height>0</height>
+   </size>
+  </property>
+  <property name="styleSheet">
+   <string notr="true">#ContextMenu { border-image: url(:/menu/assets/menu/menu_bg.png); }
+QPushButton { border: none; background: transparent; }</string>
+  </property>
+  <layout class="QGridLayout" name="gridLayout">
+   <item row="2" column="2">
+    <widget class="QPushButton" name="btn_exit">
+     <property name="enabled">
+      <bool>true</bool>
+     </property>
+     <property name="text">
+      <string/>
+     </property>
+     <property name="icon">
+      <iconset resource="menu.qrc">
+       <normaloff>:/menu/assets/menu/exit.png</normaloff>:/menu/assets/menu/exit.png</iconset>
+     </property>
+     <property name="iconSize">
+      <size>
+       <width>24</width>
+       <height>24</height>
+      </size>
+     </property>
+     <property name="flat">
+      <bool>true</bool>
+     </property>
+    </widget>
+   </item>
+   <item row="3" column="2">
+    <widget class="QPushButton" name="btn_top">
+     <property name="text">
+      <string/>
+     </property>
+     <property name="icon">
+      <iconset resource="menu.qrc">
+       <normaloff>:/menu/assets/menu/pin.png</normaloff>:/menu/assets/menu/pin.png</iconset>
+     </property>
+     <property name="iconSize">
+      <size>
+       <width>24</width>
+       <height>24</height>
+      </size>
+     </property>
+     <property name="flat">
+      <bool>true</bool>
+     </property>
+    </widget>
+   </item>
+   <item row="3" column="1">
+    <widget class="QPushButton" name="btn_pause">
+     <property name="text">
+      <string/>
+     </property>
+     <property name="icon">
+      <iconset resource="menu.qrc">
+       <normaloff>:/menu/assets/menu/pause.png</normaloff>:/menu/assets/menu/pause.png</iconset>
+     </property>
+     <property name="iconSize">
+      <size>
+       <width>24</width>
+       <height>24</height>
+      </size>
+     </property>
+     <property name="flat">
+      <bool>true</bool>
+     </property>
+    </widget>
+   </item>
+   <item row="4" column="1">
+    <widget class="QPushButton" name="btn_exit_voice">
+     <property name="text">
+      <string/>
+     </property>
+     <property name="icon">
+      <iconset resource="menu.qrc">
+       <normaloff>:/menu/assets/menu/exit_voice.png</normaloff>:/menu/assets/menu/exit_voice.png</iconset>
+     </property>
+     <property name="iconSize">
+      <size>
+       <width>24</width>
+       <height>24</height>
+      </size>
+     </property>
+     <property name="flat">
+      <bool>true</bool>
+     </property>
+    </widget>
+   </item>
+   <item row="5" column="1">
+    <widget class="QPushButton" name="btn_check_update">
+     <property name="text">
+      <string/>
+     </property>
+     <property name="icon">
+      <iconset resource="menu.qrc">
+       <normaloff>:/menu/assets/menu/update.png</normaloff>:/menu/assets/menu/update.png</iconset>
+     </property>
+     <property name="iconSize">
+      <size>
+       <width>24</width>
+       <height>24</height>
+      </size>
+     </property>
+     <property name="flat">
+      <bool>true</bool>
+     </property>
+    </widget>
+   </item>
+   <item row="2" column="1">
+    <widget class="QPushButton" name="btn_interval">
+     <property name="text">
+      <string/>
+     </property>
+     <property name="icon">
+      <iconset resource="menu.qrc">
+       <normaloff>:/menu/assets/menu/interval_10.png</normaloff>:/menu/assets/menu/interval_10.png</iconset>
+     </property>
+     <property name="iconSize">
+      <size>
+       <width>24</width>
+       <height>24</height>
+      </size>
+     </property>
+     <property name="flat">
+      <bool>true</bool>
+     </property>
+    </widget>
+   </item>
+  </layout>
+ </widget>
+ <resources>
+  <include location="menu.qrc"/>
+ </resources>
+ <connections/>
+</ui>

@@ -1,17 +1,17 @@
 {
-    "width": 297,
-    "height": 297,
-    "work_duration": 900,
+    "width": 285,
+    "height": 285,
+    "work_duration": 2400,
     "rest_duration": 306,
     "layout_config": {
         "timer_offset_x": 0,
-        "timer_offset_y": 177,
-        "font_size": 39,
+        "timer_offset_y": 168,
+        "font_size": 35,
         "time_x": 0.09090909090909091,
         "time_y": 0.5082644628099173,
         "time_w": 0.640495867768595,
         "time_h": 0.2975206611570248,
-        "menu_scale": 1.3370312551577601
+        "menu_scale": 1.2830097903029016
     },
     "always_on_top": true,
     "birthday": "1228",

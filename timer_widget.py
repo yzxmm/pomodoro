@@ -123,7 +123,7 @@ class TimerWidget(QtWidgets.QWidget):
             lbl = self.digit_labels[0]
             lbl.show()
             if self.flipped:
-                pm = pm.transformed(QtGui.QTransform().rotate(180))
+                pm = pm.transformed(QtGui.QTransform().scale(1, -1))
             lbl.setPixmap(pm)
             lbl.setScaledContents(True)
             
@@ -150,15 +150,13 @@ class TimerWidget(QtWidgets.QWidget):
             return
 
         chars = [text[0], text[1], ":", text[3], text[4]]
-        if self.flipped:
-            chars = reversed(chars) # Reverse char order for 180 flip
 
         pixmaps = []
         for ch in chars:
             p = self.digit_path(ch)
             pm = QtGui.QPixmap(p)
             if self.flipped and not pm.isNull():
-                pm = pm.transformed(QtGui.QTransform().rotate(180))
+                pm = pm.transformed(QtGui.QTransform().scale(1, -1))
             pixmaps.append(pm if not pm.isNull() else QtGui.QPixmap())
         
         container_w = self.width()
