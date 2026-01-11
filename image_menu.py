@@ -94,6 +94,14 @@ class ImageMenu(QtWidgets.QFrame):
             layout.setSpacing(0)
             layout.addWidget(root_widget)
             self.ui_root = root_widget
+            
+            # [Fix] Sync size from Designer to runtime
+            # Prevent the window from being squashed if user uses free layout (no constraints)
+            # We use the geometry from Designer as the authoritative size.
+            designer_size = root_widget.geometry().size()
+            if designer_size.width() > 10 and designer_size.height() > 10:
+                self.setFixedSize(designer_size)
+            
             # Clear host background to avoid double backgrounds
             self.setStyleSheet(" #ContextMenuHost { background: transparent; border: none; } ")
             self.bind_ui_controls()

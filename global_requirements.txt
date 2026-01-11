@@ -49,6 +49,7 @@
   - **点击后**: 触发继续计时逻辑。
 
 ## 3. 缩放与布局 (Scaling & Layout)
+人物不能单独拖动！
 - **整体操作 (Global Scaling)**:
   - **操作**: **Shift + 滚轮 (Wheel)**缩放全局大小。位置可以**Shift + 左键拖动**。
   - **效果**: 窗口、人物、时间牌、按钮、菜单整体缩放。
@@ -62,7 +63,7 @@
 工作：最长1小时，最短10分钟
 休息：最短30秒，最长30分钟
     - **模式切换**: 按 **Alt 键** 切换调节目标（工作时间 Work / 休息时间 Rest）。
-    - **快捷预设 (Double Click Zones)**:（双击人物+时间牌整体范围）
+    - **快捷预设 (Double Click Zones)**:（双击人物范围）
         - **Work Mode**:
             - Top 25%: 15 min
             - 25-50%: 30 min
@@ -78,26 +79,107 @@
 ## 4. 音频系统 (Audio System)
 - **分类 (Categories)**: Start, End, Interval, Resume, Exit, Random.
 - **节日/季节支持 (Holiday/Season)**: 自动检测日期，优先播放节日/季节限定语音。
-- **特殊节日 (Special Holidays)**:
-  - 春节 `spring_festival`：按 `calendar_config.json` 配置日期启用，对应语音目录 `sounds/holidays/spring_festival/`，每日问候放在 `sounds/holidays/spring_festival/greeting/`。
-  - 儿童节 `children_day`：每年 06/01 启用，对应语音目录 `sounds/holidays/children_day/`，每日问候放在 `sounds/holidays/children_day/greeting/`。
-- **季节扩展 (Season Extensions)**:
-  - 国庆 `national_day`：每年 10/01 至 10/07 启用，对应语音目录 `sounds/random/{start,end,interval,resume,exit}/national_day/`。
 - **更新机制**: 支持通过 Git 自动更新音效库。
 
 ## 5. 托盘与图标 (Tray & Icons)
 - **动态图标**: 根据当前节日/季节自动切换应用图标 (Tray Icon & Window Icon)。
 - **托盘菜单**: 提供显示/隐藏、退出功能。
 
-## 6. 其它功能 (Other Features)
+## 6. 云端语音系统 (Cloud Sounds System)
+
+本项目包含一套云端语音生成和管理系统，用于动态更新应用的语音资源。
+
+### 6.1 目录结构
+`cloud/` 目录包含了按分类和主题组织的音频文件。
+
+```
+cloud/
+├── manifest.json       # 生成的索引文件，供挂件消费
+├── start/              # 番茄钟开始时的语音
+│   ├── 1.mp3           # 普通/默认语音 (直接位于分类文件夹下)
+│   ├── 2.mp3
+│   ├── christmas/      # 主题语音 (子文件夹)
+│   │   └── ...
+│   └── dec28/
+│       └── ...
+├── end/                # 番茄钟结束时的语音
+├── interval/           # 番茄钟进行中的提醒语音
+├── resume/             # 休息结束恢复工作时的语音
+└── exit/               # 应用退出时的语音
+```
+
+### 6.2 URL 结构
+`manifest.json` 将这些文件映射为 URL。当前前缀为：
+`https://raw.githubusercontent.com/yzxmm/pomodoro-assets/main`
+
+示例: `cloud/start/1.mp3` -> `.../cloud/start/1.mp3`
+
+### 6.3 工具脚本 (Tools)
+
+#### 1. `tools/gen_cloud_normal.py`
+使用 Edge TTS 生成标准（普通）语音文件。
+- **Voice**: `zh-CN-XiaoxiaoNeural`
+- **Output**: 直接生成到 `cloud/{category}/` (如 `cloud/start/1.mp3`)
+- **Content**: 5 个分类 x 5 句文案 = 25 个文件。
+
+#### 2. `tools/build_cloud_manifest.py`
+扫描 `cloud/` 目录并生成 `manifest.json`。
+- 基于文件夹名称检测分类 (Categories)。
+- 基于子文件夹检测季节/标签 (Seasons/Tags)。
+- 直接位于分类文件夹下的文件被视为默认/通用语音。
+
+### 6.4 分类说明
+- **start**: 专注开始。
+- **end**: 休息时间提醒。
+- **interval**: 专注保持/鼓励。
+- **resume**: 回到工作提醒。
+- **exit**: 程序关闭告别。
+
+## 7. 其它功能 (Other Features)
 - **作弊码 (Cheat Codes)**: 
   - `/surrender`: 投降 (Work Phase > 15m -> Quit App)。
   - `/remake`: 重置计时器。
-  - `/666`: 垂直翻转 (Flip)。
+  - `/666`: 翻转 (Flip)。
   - `/birYYYY`: 设置生日年份。未设置时默认9999（不播放语音）
 - **配置持久化 (Persistence)**: 
   - 保存: 窗口位置、整体缩放比例 (Scale Factor)、时间牌字体大小、音量、工作/休息时长偏好。
 
-## 7. 动画序列 (Animation Sequences)
-- **工作阶段 (Work Phase)**: 播放图像序列 e:\Pomodoro_Widget\pomodoro_git\assets\idle。
-- **休息阶段 (Rest Phase)**: 播放图像序列 e:\Pomodoro_Widget\pomodoro_git\assets\paused。
+## 7. 开发体验与工具 (Developer Experience)
+- **Qt Designer 可视化 (WYSIWYG)**:
+  - 必须能够在 Qt Designer 中直接预览右键菜单的最终运行效果（背景、图标、透明度）。
+  - **自由布局 (No Snapping)**: 右键菜单的布局编辑需支持无吸附（无 Grid Layout 限制）的自由拖拽模式，允许像素级调整位置。
+
+## 9. 语音素材归档助手 (Voice Organizer Tool)
+
+位于 `tools/voice_organizer.py` 的独立工具，用于高效整理和分类语音素材。
+
+### 9.1 功能特性
+*   **双面板设计**: 左侧为源文件（待处理区），右侧为目标文件夹。
+*   **双目标支持**: 右侧支持上下分栏，可同时管理“文件夹 A”和“文件夹 B”。
+    *   默认显示单个目标文件夹 (A)。
+    *   支持动态添加/移除副目标文件夹 (B)。
+*   **双向拖拽**: 
+    *   左 -> 右：移动/剪切文件到目标文件夹。
+    *   右 -> 左：将文件拖回源文件夹（恢复）。
+*   **生成测试数据**: 支持在源文件夹生成测试音频文件。
+*   **跨磁盘支持**: 自动处理跨磁盘移动操作。
+*   **撤销功能**: 支持 Ctrl+Z 或点击撤销按钮撤销最近的移动操作。
+*   **模拟识别**: 左侧列表显示模拟的语音转文字内容（Subtitle 样式）。
+*   **语音识别**: 集成 Whisper 模型进行真实语音转文字（需安装 openai-whisper）。
+*   **音频试听**: 双击文件或使用右键菜单播放音频（支持 wav/mp3）。
+
+### 9.2 使用说明
+1.  运行 `python tools/voice_organizer.py` 启动工具。
+2.  左侧选择录音源文件夹。
+3.  点击“生成测试音频”可快速创建测试文件。
+4.  右侧选择目标归档文件夹。
+5.  点击右侧顶部的“+”按钮可开启副目标文件夹（文件夹 B）。
+6.  拖拽文件进行归类，或使用 Ctrl+Z 撤销。
+7.  选中文件点击“识别”按钮（需安装环境）进行语音转文字。
+
+### 9.3 环境要求
+*   PySide6
+*   openai-whisper (可选，用于真实识别)
+*   torch (可选，用于 Whisper)
+*   pydub (可选，用于音频处理)
+

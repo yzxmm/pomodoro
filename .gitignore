@@ -37,3 +37,18 @@ __pycache__
 *.pyc
 .python-version
 uv.lock
+
+# Local User Settings
+settings.json
+
+# Voice Organizer / Transcriber artifacts
+tools/test_*/
+tools/temp/
+*.pt
+*.pth
+
+# FFmpeg (if placed locally)
+ffmpeg/
+ffmpeg.exe
+ffprobe.exe
+
