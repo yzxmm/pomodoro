@@ -93,13 +93,8 @@ class VoiceOrganizer(QMainWindow):
         self.src_dir_layout = QHBoxLayout()
         self.btn_select_src = QPushButton("选择源文件夹 (Source)")
         self.btn_select_src.clicked.connect(self.select_source_directory)
-        self.lbl_src_path = QLabel("请选择录音文件夹...")
         self.src_dir_layout.addWidget(self.btn_select_src)
-        
-        self.src_dir_layout.addWidget(self.lbl_src_path)
         self.left_layout.addLayout(self.src_dir_layout)
-        
-        # REMOVED UNDO BUTTON as requested
 
         # File List
         self.file_list = DraggableTreeView()
@@ -277,8 +272,8 @@ class VoiceOrganizer(QMainWindow):
             
         src = self.settings.value("source_path")
         if src and os.path.exists(src):
-            self.lbl_src_path.setText(src)
             self.file_list.setRootIndex(self.file_model.setRootPath(src))
+            self.statusBar().showMessage(f"源文件夹: {src}", 3000)
             
         t1 = self.settings.value("target_path_1")
         if not t1 or not os.path.exists(t1):
@@ -309,9 +304,9 @@ class VoiceOrganizer(QMainWindow):
     def select_source_directory(self):
         d = QFileDialog.getExistingDirectory(self, "选择包含录音的文件夹")
         if d:
-            self.lbl_src_path.setText(d)
             self.file_list.setRootIndex(self.file_model.setRootPath(d))
             self.settings.setValue("source_path", d)
+            self.statusBar().showMessage(f"源文件夹: {d}", 3000)
 
     def select_target_directory_1(self):
         d = QFileDialog.getExistingDirectory(self, "选择文件夹 A")

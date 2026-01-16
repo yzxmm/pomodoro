@@ -22,6 +22,73 @@ class ClickableLabel(QtWidgets.QLabel):
         else:
             super().mousePressEvent(event)
 
+class HelpImageWindow(QtWidgets.QWidget):
+    def __init__(self, pixmap, parent=None):
+        super().__init__(parent)
+        self.setWindowFlags(QtCore.Qt.FramelessWindowHint | QtCore.Qt.Window)
+        self.setAttribute(QtCore.Qt.WA_TranslucentBackground, True)
+        self.setFocusPolicy(QtCore.Qt.StrongFocus)
+        self.label = QtWidgets.QLabel(self)
+        self.label.setAlignment(QtCore.Qt.AlignCenter)
+        self.label.setScaledContents(True)
+        self.original_pixmap = pixmap
+        self.scale_factor = 1.0
+        if not pixmap.isNull():
+            self.label.setPixmap(pixmap)
+            self.resize(pixmap.size())
+        else:
+            self.label.setText("Help")
+        self.dragging = False
+        self.drag_offset = QtCore.QPoint()
+
+    def resizeEvent(self, event):
+        self.label.setGeometry(0, 0, self.width(), self.height())
+        super().resizeEvent(event)
+
+    def wheelEvent(self, event):
+        delta = event.angleDelta().y()
+        if delta > 0:
+            self.scale_factor *= 1.1
+        elif delta < 0:
+            self.scale_factor /= 1.1
+        self.scale_factor = max(0.3, min(3.0, self.scale_factor))
+        if not self.original_pixmap.isNull():
+            size = self.original_pixmap.size()
+            w = max(1, int(size.width() * self.scale_factor))
+            h = max(1, int(size.height() * self.scale_factor))
+            scaled = self.original_pixmap.scaled(QtCore.QSize(w, h), QtCore.Qt.KeepAspectRatio, QtCore.Qt.SmoothTransformation)
+            self.label.setPixmap(scaled)
+            self.resize(scaled.size())
+
+    def mousePressEvent(self, event):
+        if event.button() == QtCore.Qt.LeftButton:
+            self.dragging = True
+            self.drag_offset = event.globalPosition().toPoint() - self.frameGeometry().topLeft()
+            event.accept()
+        else:
+            super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event):
+        if self.dragging:
+            pos = event.globalPosition().toPoint() - self.drag_offset
+            self.move(pos)
+            event.accept()
+        else:
+            super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event):
+        if event.button() == QtCore.Qt.LeftButton:
+            self.dragging = False
+            event.accept()
+        else:
+            super().mouseReleaseEvent(event)
+
+    def keyPressEvent(self, event):
+        if event.key() == QtCore.Qt.Key_Escape:
+            self.close()
+        else:
+            super().keyPressEvent(event)
+
 class PomodoroWidget(QtWidgets.QWidget):
     def __init__(self):
         super().__init__()
@@ -129,6 +196,8 @@ class PomodoroWidget(QtWidgets.QWidget):
         self.check_updates_enabled = True
         self.exit_voice_enabled = True
         self.closing = False
+        self.show_help_on_start = True
+        self.help_window = None
 
         self.animation_frames = []
         self.current_frame_index = 0
@@ -249,11 +318,32 @@ class PomodoroWidget(QtWidgets.QWidget):
              self.download_manager.start()
         else:
              self.show()
+             self.maybe_show_help_overlay()
              
     def on_sounds_updated_and_show(self):
         # Re-build pool in case new sounds arrived
         self.build_sound_pool()
         self.show()
+        self.maybe_show_help_overlay()
+
+    def maybe_show_help_overlay(self):
+        if not getattr(self, "show_help_on_start", True):
+            return
+        pix = QtGui.QPixmap(resolve_asset("help.png"))
+        if pix.isNull():
+            return
+        self.help_window = HelpImageWindow(pix, None)
+        self.help_window.show()
+        self.help_window.activateWindow()
+        self.help_window.raise_()
+        if self.isVisible():
+            rect = self.geometry()
+            hrect = self.help_window.frameGeometry()
+            x = rect.center().x() - int(hrect.width() / 2)
+            y = rect.center().y() - int(hrect.height() / 2)
+            self.help_window.move(x, y)
+        self.show_help_on_start = False
+        self.save_settings()
 
     def mousePressEvent(self, event):
         if event.button() == QtCore.Qt.LeftButton:
@@ -523,11 +613,6 @@ class PomodoroWidget(QtWidgets.QWidget):
         return active
 
     def build_sound_pool(self):
-        # Scan sounds folder
-        pass # To be implemented if we want full logic, but for now we assume simple structure or rely on existing logic
-        # Actually, let's copy the logic from main.py but simplified or just call a helper
-        # Since the user asked to split, I should probably keep the logic here.
-        
         # Clear pools
         self.pool_start = []
         self.pool_end = []
@@ -535,18 +620,64 @@ class PomodoroWidget(QtWidgets.QWidget):
         self.pool_resume = []
         self.random_pool = []
         
-        # ... logic omitted for brevity, but I should probably include it for the app to work ...
-        # I'll just do a basic scan for now to make it runnable
+        # Get active context
+        active_holidays = self.get_active_holidays()
+        active_seasons = self.get_active_seasons()
         
-        base = sound_path()
-        for root, _, files in os.walk(base):
-            for f in files:
-                if f.endswith(".mp3") or f.endswith(".wav"):
+        # Define search roots (Local sounds + Cloud sounds)
+        roots = [sound_path()]
+        cloud_path = os.path.join(base_dir(), "cloud")
+        if os.path.exists(cloud_path):
+            roots.append(cloud_path)
+            
+        for base in roots:
+            if not os.path.exists(base): continue
+            
+            for root, dirs, files in os.walk(base):
+                for f in files:
+                    if not (f.lower().endswith(".mp3") or f.lower().endswith(".wav") or f.lower().endswith(".ogg")):
+                        continue
+                        
                     path = os.path.join(root, f)
-                    if "start" in f: self.pool_start.append(path)
-                    elif "end" in f: self.pool_end.append(path)
-                    elif "resume" in f: self.pool_resume.append(path)
-                    elif "interval" in f: self.pool_ten.append(path)
+                    # Normalize path for checking
+                    rel_path = os.path.relpath(path, base).replace("\\", "/")
+                    parts = rel_path.lower().split("/")
+                    
+                    # Filter: Greeting sounds are special, don't add to normal pools
+                    if "greeting" in parts or "greeting" in f.lower():
+                        continue
+
+                    # Filter: Holidays
+                    if "holidays" in parts:
+                        try:
+                            idx = parts.index("holidays")
+                            if idx + 1 < len(parts):
+                                hid = parts[idx+1]
+                                if hid not in active_holidays:
+                                    continue # Skip inactive holiday sounds
+                        except: pass
+                        
+                    # Filter: Seasons
+                    if "seasons" in parts:
+                        try:
+                            idx = parts.index("seasons")
+                            if idx + 1 < len(parts):
+                                sid = parts[idx+1]
+                                if sid not in active_seasons:
+                                    continue # Skip inactive season sounds
+                        except: pass
+                    
+                    # Determine category based on directory structure or filename
+                    is_start = "start" in parts or "start" in f.lower()
+                    is_end = "end" in parts or "end" in f.lower()
+                    is_resume = "resume" in parts or "resume" in f.lower()
+                    is_interval = "interval" in parts or "ten" in parts or "interval" in f.lower()
+                    
+                    # Priority assignment
+                    if is_start: self.pool_start.append(path)
+                    elif is_end: self.pool_end.append(path)
+                    elif is_resume: self.pool_resume.append(path)
+                    elif is_interval: self.pool_ten.append(path)
                     else: self.random_pool.append(path)
 
     def update_sounds_async(self):
@@ -572,6 +703,7 @@ class PomodoroWidget(QtWidgets.QWidget):
                     self.check_updates_enabled = d.get("check_updates_enabled", True)
                     self.exit_voice_enabled = d.get("exit_voice_enabled", True)
                     self.voice_interval_minutes = d.get("voice_interval_minutes", 10)
+                    self.show_help_on_start = d.get("show_help_on_start", True)
             except:
                 pass
         self.setWindowFlag(QtCore.Qt.WindowStaysOnTopHint, self.always_on_top)
@@ -587,7 +719,8 @@ class PomodoroWidget(QtWidgets.QWidget):
             "birthday": self.birthday,
             "check_updates_enabled": self.check_updates_enabled,
             "exit_voice_enabled": self.exit_voice_enabled,
-            "voice_interval_minutes": self.voice_interval_minutes
+            "voice_interval_minutes": self.voice_interval_minutes,
+            "show_help_on_start": self.show_help_on_start
         }
         with open(os.path.join(base_dir(), "settings.json"), "w", encoding="utf-8") as f:
             json.dump(d, f, indent=4)

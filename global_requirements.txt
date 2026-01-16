@@ -77,65 +77,61 @@
   - **核心地位**: 必须始终可见 (Always Visible)，缩放时相对位置不能飘移，且不能飞出屏幕。
 
 ## 4. 音频系统 (Audio System)
-- **分类 (Categories)**: Start, End, Interval, Resume, Exit, Random.
-- **节日/季节支持 (Holiday/Season)**: 自动检测日期，优先播放节日/季节限定语音。
-- **更新机制**: 支持通过 Git 自动更新音效库。
+
+### 4.1 资源组织与目录 (Organization & Directory)
+- **灵活存放**: 音频资源可自由存放于本地 `sounds/` 目录或云端同步目录 `cloud/`。
+- **合并策略**: 程序启动时会自动扫描这两个目录，识别并合并所有音频文件。具体存放在哪个目录由主播个人偏好决定（例如将长期固定的语音放在 `sounds/`，将经常变动的语音放在 `cloud/` 以便 Git 更新）。
+- **统一结构**: 无论存放在 `sounds/` 还是 `cloud/`，都必须遵循相同的目录结构：
+  - **基础分类（共 5 种）**:
+    - `start/`: 专注开始
+    - `end/`: 休息开始
+    - `interval/`: 专注中途提醒
+    - `resume/`: 休息结束/恢复工作
+    - `exit/`: 退出程序
+  - **节日/季节 (Holidays & Seasons)**:
+    - `holidays/{holiday_id}/`: 节日专属包（如 `holidays/spring_festival/`）
+      - `greeting/`: 节日问候（仅当天首次启动播放）
+      - `start/`, `end/`, ...: 节日专属事件语音
+    - `seasons/{season_id}/`: 季节专属包（如 `seasons/summer/`）
+      - 结构同基础分类。
+
+### 4.2 播放逻辑与采样 (Playback & Sampling)
+- **常规采样**: 
+  - 所有可用来源（sounds + cloud）的同类语音合并为一个池。
+  - 季节目录存在时，仅在对应季节/日期内加入池中，与基础语音等概率随机。
+- **特殊节日逻辑 (Special Holidays)**:
+  - **生效范围**: 仅在节日当天生效。
+  - **Greeting**: 当天首次启动应用时，**必播**节日 Greeting。
+  - **事件触发**: 各类事件（Start/End等）在**当日首次触发时**，**必定**使用对应的节日语音。
+  - **后续采样**: 当日后续触发时，节日语音与同类基础语音混合，等概率抽样。
 
 ## 5. 托盘与图标 (Tray & Icons)
 - **动态图标**: 根据当前节日/季节自动切换应用图标 (Tray Icon & Window Icon)。
 - **托盘菜单**: 提供显示/隐藏、退出功能。
 
-## 6. 云端语音系统 (Cloud Sounds System)
+## 6. 首次启动帮助图片 (First-Launch Help Overlay)
+- **触发时机**: 应用第一次运行时自动弹出，之后默认不再自动显示。
+- **内容形式**: 显示一张包含软件详细用法的整图，从 `assets/help.png`（优先）或`assets/help.jpg` 加载；如该文件不存在则不弹出。
+- **交互**: 支持鼠标拖动移动窗口，滚轮缩放图片，按 Esc 关闭。
 
-本项目包含一套云端语音生成和管理系统，用于动态更新应用的语音资源。
+## 7. 开发体验与工具 (Developer Experience)
+- **Qt Designer 可视化 (WYSIWYG)**:
+  - 必须能够在 Qt Designer 中直接预览右键菜单的最终运行效果（背景、图标、透明度）。
+  - **自由布局 (No Snapping)**: 右键菜单的布局编辑需支持无吸附（无 Grid Layout 限制）的自由拖拽模式，允许像素级调整位置。
 
-### 6.1 目录结构
-`cloud/` 目录包含了按分类和主题组织的音频文件。
+## 8. 配套工具 (Tools)
 
-```
-cloud/
-├── manifest.json       # 生成的索引文件，供挂件消费
-├── start/              # 番茄钟开始时的语音
-│   ├── 1.mp3           # 普通/默认语音 (直接位于分类文件夹下)
-│   ├── 2.mp3
-│   ├── christmas/      # 主题语音 (子文件夹)
-│   │   └── ...
-│   └── dec28/
-│       └── ...
-├── end/                # 番茄钟结束时的语音
-├── interval/           # 番茄钟进行中的提醒语音
-├── resume/             # 休息结束恢复工作时的语音
-└── exit/               # 应用退出时的语音
-```
+### 8.1 云端资源生成工具
+用于支持 `cloud/` 目录的资源生成与索引。
+- **`tools/gen_cloud_normal.py`**: 使用 Edge TTS 生成标准语音文件。
+- **`tools/build_cloud_manifest.py`**: 扫描 `cloud/` 目录并生成 `manifest.json` 索引文件。
 
-### 6.2 URL 结构
-`manifest.json` 将这些文件映射为 URL。当前前缀为：
-`https://raw.githubusercontent.com/yzxmm/pomodoro-assets/main`
+### 8.2 语音素材归档助手 (Voice Organizer Tool)
+位于 `tools/voice_organizer.py` 的独立工具，用于高效整理和分类语音素材。
+- **特性**: 双面板设计、双向拖拽、语音识别辅助、音频试听。
+- **用途**: 方便主播将录制好的干音快速归档到上述的标准目录结构中。
 
-示例: `cloud/start/1.mp3` -> `.../cloud/start/1.mp3`
-
-### 6.3 工具脚本 (Tools)
-
-#### 1. `tools/gen_cloud_normal.py`
-使用 Edge TTS 生成标准（普通）语音文件。
-- **Voice**: `zh-CN-XiaoxiaoNeural`
-- **Output**: 直接生成到 `cloud/{category}/` (如 `cloud/start/1.mp3`)
-- **Content**: 5 个分类 x 5 句文案 = 25 个文件。
-
-#### 2. `tools/build_cloud_manifest.py`
-扫描 `cloud/` 目录并生成 `manifest.json`。
-- 基于文件夹名称检测分类 (Categories)。
-- 基于子文件夹检测季节/标签 (Seasons/Tags)。
-- 直接位于分类文件夹下的文件被视为默认/通用语音。
-
-### 6.4 分类说明
-- **start**: 专注开始。
-- **end**: 休息时间提醒。
-- **interval**: 专注保持/鼓励。
-- **resume**: 回到工作提醒。
-- **exit**: 程序关闭告别。
-
-## 7. 其它功能 (Other Features)
+## 9. 其它功能 (Other Features)
 - **作弊码 (Cheat Codes)**: 
   - `/surrender`: 投降 (Work Phase > 15m -> Quit App)。
   - `/remake`: 重置计时器。
@@ -144,12 +140,7 @@ cloud/
 - **配置持久化 (Persistence)**: 
   - 保存: 窗口位置、整体缩放比例 (Scale Factor)、时间牌字体大小、音量、工作/休息时长偏好。
 
-## 7. 开发体验与工具 (Developer Experience)
-- **Qt Designer 可视化 (WYSIWYG)**:
-  - 必须能够在 Qt Designer 中直接预览右键菜单的最终运行效果（背景、图标、透明度）。
-  - **自由布局 (No Snapping)**: 右键菜单的布局编辑需支持无吸附（无 Grid Layout 限制）的自由拖拽模式，允许像素级调整位置。
-
-## 9. 语音素材归档助手 (Voice Organizer Tool)
+## 10. 语音素材归档助手 (Voice Organizer Tool)
 
 位于 `tools/voice_organizer.py` 的独立工具，用于高效整理和分类语音素材。
 
@@ -161,7 +152,6 @@ cloud/
 *   **双向拖拽**: 
     *   左 -> 右：移动/剪切文件到目标文件夹。
     *   右 -> 左：将文件拖回源文件夹（恢复）。
-*   **生成测试数据**: 支持在源文件夹生成测试音频文件。
 *   **跨磁盘支持**: 自动处理跨磁盘移动操作。
 *   **撤销功能**: 支持 Ctrl+Z 或点击撤销按钮撤销最近的移动操作。
 *   **模拟识别**: 左侧列表显示模拟的语音转文字内容（Subtitle 样式）。
@@ -171,15 +161,13 @@ cloud/
 ### 9.2 使用说明
 1.  运行 `python tools/voice_organizer.py` 启动工具。
 2.  左侧选择录音源文件夹。
-3.  点击“生成测试音频”可快速创建测试文件。
-4.  右侧选择目标归档文件夹。
-5.  点击右侧顶部的“+”按钮可开启副目标文件夹（文件夹 B）。
-6.  拖拽文件进行归类，或使用 Ctrl+Z 撤销。
-7.  选中文件点击“识别”按钮（需安装环境）进行语音转文字。
+3.  右侧选择目标归档文件夹。
+4.  点击右侧顶部的“+”按钮可开启副目标文件夹（文件夹 B）。
+5.  拖拽文件进行归类，或使用 Ctrl+Z 撤销。
+6.  选中文件点击“识别”按钮（需安装环境）进行语音转文字。
 
 ### 9.3 环境要求
 *   PySide6
 *   openai-whisper (可选，用于真实识别)
 *   torch (可选，用于 Whisper)
 *   pydub (可选，用于音频处理)
-
