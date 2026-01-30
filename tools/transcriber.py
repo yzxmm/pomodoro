@@ -62,7 +62,7 @@ class Transcriber(QObject):
             self._has_ffmpeg = False
             print("Whisper is NOT installed.")
 
-    def load_model(self, model_size="base"):
+    def load_model(self, model_size="small"):
         if not self._has_whisper:
             return
         if not self._has_ffmpeg:

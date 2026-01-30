@@ -1,0 +1,11 @@
+{
+    "default_fps": 10,
+    "idle": {
+        "fps": 10,
+        "loop": true
+    },
+    "paused": {
+        "fps": 10,
+        "loop": true
+    }
+}

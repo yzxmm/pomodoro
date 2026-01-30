@@ -71,13 +71,11 @@ class ImageMenu(QtWidgets.QFrame):
         self.owner.keyPressEvent(event)
         super().keyPressEvent(event)
     def resolve_ui_path(self, name):
-        p1 = os.path.join(base_dir(), name)
-        if os.path.exists(p1):
-            return p1
-        p2 = os.path.join(os.path.dirname(base_dir()), name)
-        if os.path.exists(p2):
-            return p2
-        return p1
+        # Use utils.resolve_path to handle Frozen/Dev environments correctly
+        from utils import resolve_path
+        # We assume menu.ui is at the root level in the bundle
+        return resolve_path(".", name)
+
     def try_load_designer_ui(self):
         try:
             ui_path = self.resolve_ui_path("menu.ui")

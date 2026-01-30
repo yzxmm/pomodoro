@@ -92,6 +92,7 @@ class HelpImageWindow(QtWidgets.QWidget):
 class PomodoroWidget(QtWidgets.QWidget):
     def __init__(self):
         super().__init__()
+        self.setWindowTitle("pmpmchan")
         # QtWidgets.QApplication.setAttribute(QtCore.Qt.AA_EnableHighDpiScaling) # Deprecated in Qt6
         self.setWindowFlags(QtCore.Qt.FramelessWindowHint | QtCore.Qt.Window)
         self.setAttribute(QtCore.Qt.WA_TranslucentBackground, True)
@@ -199,10 +200,13 @@ class PomodoroWidget(QtWidgets.QWidget):
         self.show_help_on_start = True
         self.help_window = None
 
+        self.animation_config = {}
+        self.load_animation_config()
+
         self.animation_frames = []
         self.current_frame_index = 0
         self.animation_timer = QtCore.QTimer(self)
-        self.animation_timer.setInterval(100) # 10fps
+        self.animation_timer.setInterval(100) # Default 10fps
         self.animation_timer.timeout.connect(self.update_animation)
         self.current_anim_type = "idle" # or "paused"
         self.current_anim_static = True # Track if current anim is single image
@@ -512,8 +516,22 @@ class PomodoroWidget(QtWidgets.QWidget):
         val = os.environ.get(name, str(default)).lower()
         return val in ("true", "1", "yes", "on")
 
+    def load_animation_config(self):
+        p = resolve_asset("animation_config.json")
+        if os.path.exists(p):
+            try:
+                with open(p, "r", encoding="utf-8") as f:
+                    self.animation_config = json.load(f)
+            except:
+                self.animation_config = {}
+        else:
+            self.animation_config = {}
+
     def load_calendar_config(self):
-        p = os.path.join(base_dir(), "calendar_config.json")
+        # Use resolve_path to support bundled config (in _MEIPASS)
+        # passing "" as subfolder checks root/ and _MEIPASS/
+        from utils import resolve_path
+        p = resolve_path("", "calendar_config.json")
         if os.path.exists(p):
             try:
                 with open(p, "r", encoding="utf-8") as f:
@@ -543,10 +561,37 @@ class PomodoroWidget(QtWidgets.QWidget):
         # Check calendar config
         holidays = self.calendar_config.get("holidays", [])
         
+        current_year = str(today.year())
+
         # Handle list structure (from actual json)
         if isinstance(holidays, list):
             for cfg in holidays:
                 hid = cfg.get("id")
+                
+                # 1. Check Year-Specific Configuration (priority)
+                year_dates = cfg.get("year_dates", {})
+                if current_year in year_dates:
+                    y_entry = year_dates[current_year]
+                    
+                    # Support list of month-configs for cross-month holidays
+                    if isinstance(y_entry, list):
+                        for sub_cfg in y_entry:
+                            hm = sub_cfg.get("month")
+                            hdays = sub_cfg.get("days", [])
+                            if hm == m and d in hdays:
+                                active.append(hid)
+                                break # Found match in this year's list
+                        if hid in active: continue
+
+                    # Support single month-config
+                    elif isinstance(y_entry, dict):
+                        hm = y_entry.get("month")
+                        hdays = y_entry.get("days", [])
+                        if hm == m and d in hdays:
+                            active.append(hid)
+                            continue # Matched specific year, skip generic check
+
+                # 2. Check Generic Configuration (recurring every year)
                 hm = cfg.get("month")
                 hdays = cfg.get("days", [])
                 
@@ -1039,6 +1084,17 @@ class PomodoroWidget(QtWidgets.QWidget):
         self.current_frame_index = 0
         self.current_anim_type = anim_type
         self.current_anim_static = False
+        
+        # Configure FPS
+        fps = 10
+        if anim_type in self.animation_config:
+            fps = self.animation_config[anim_type].get("fps", 10)
+        else:
+            fps = self.animation_config.get("default_fps", 10)
+        
+        interval = int(1000 / max(1, fps))
+        self.animation_timer.setInterval(interval)
+        
         pm = self.animation_frames[0]
         if self.is_flipped and not pm.isNull():
             t = QtGui.QTransform()

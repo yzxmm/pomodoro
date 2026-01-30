@@ -78,3 +78,22 @@ datas = [
 - 如果不存在，会跳过更新步骤，直接进入程序。
 
 因此，如果你分发此程序给普通用户，请告知他们如果需要自动更新资源，需要安装 Git。否则程序将仅使用打包时的内置资源。
+
+## 8. Voice Organizer 独立打包（轻量方案）
+
+如果你想单独分发语音整理助手（`tools/voice_organizer.py`），又不希望把 Whisper 模型打包进 exe，可以使用专门的构建脚本：
+
+```bash
+python build_voice_organizer.py
+```
+
+该脚本会：
+- 使用 PyInstaller 生成 `voice_organizer.exe`；
+- 在 `dist_voice_organizer/` 下生成独立目录；
+- 将 `assets/` 和 `sounds/` 复制为**外部文件夹**；
+- 保持 Whisper 模型走默认缓存路径（例如 `~/.cache/whisper`），**不会**打进 exe。
+
+这样做的好处：
+- exe 体积只包含代码和依赖库，模型按需下载；
+- 用户可以随时更新 `sounds/` 里的语音资源，而无需重新打包；
+- Voice Organizer 可以作为一个轻量独立工具发给他人使用。
