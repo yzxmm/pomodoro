@@ -159,7 +159,7 @@
 
 ## 9. 其它功能 (Other Features)
 - **作弊码 (Cheat Codes)**: 
-  - `/surrender`: 投降 (Work Phase > 15m -> Quit App)。
+  - `/surrender`: 投降 (Work Phase > 15m -> Play Exit Voice -> Quit App)。
   - `/remake`: 重置计时器。
   - `/666`: 翻转 (Flip)。
   - `/birYYYY`: 设置生日年份。未设置时默认9999（不播放语音）

@@ -219,11 +219,13 @@ class PomodoroWidget(QtWidgets.QWidget):
         self.audio_output = QAudioOutput(self)
         self.player.setAudioOutput(self.audio_output)
         self.audio_output.setVolume(1.0)
-        self.player.playbackStateChanged.connect(self.on_playback_state_changed)
+        # self.player.playbackStateChanged.connect(self.on_playback_state_changed)
+        self.player.mediaStatusChanged.connect(self.on_media_status_changed)
         self.exit_quit_timer = QtCore.QTimer(self)
         self.exit_quit_timer.setSingleShot(True)
         self.exit_quit_timer.timeout.connect(QtWidgets.QApplication.quit)
         self.sound_queue = []
+        self.sequence_finish_callback = None
         self.pool_start = []
         self.pool_end = []
         self.pool_ten = []
@@ -956,10 +958,11 @@ class PomodoroWidget(QtWidgets.QWidget):
         self.set_time_text(self.format_time(self.elapsed))
         self.maybe_interval_voice()
         if self.phase == "working" and self.elapsed >= self.work_duration:
-            self.play_category('end', default_file='end.mp3')
             if self.exit_on_work_end:
-                QtWidgets.QApplication.quit()
+                self.play_sequence(['end', 'exit'], on_finish=QtWidgets.QApplication.quit)
                 return
+
+            self.play_category('end', default_file='end.mp3')
             self.phase = "rest"
             self.elapsed = 0
             self.apply_phase_visuals()
@@ -969,18 +972,70 @@ class PomodoroWidget(QtWidgets.QWidget):
             self.apply_phase_visuals()
 
     def play_category(self, category, default_file=None):
-        # Simplified sound playing
+        path = self.resolve_sound_path(category, default_file)
+        if path:
+            self.sound_queue = [] # Clear queue
+            self.sequence_finish_callback = None
+            self.player.setSource(QtCore.QUrl.fromLocalFile(path))
+            self.player.play()
+
+    def resolve_sound_path(self, category, default_file=None):
         path = None
         if category == 'start' and self.pool_start: path = random.choice(self.pool_start)
         elif category == 'end' and self.pool_end: path = random.choice(self.pool_end)
         elif category == 'resume' and self.pool_resume: path = random.choice(self.pool_resume)
+        elif category == 'ten' and self.pool_ten: path = random.choice(self.pool_ten)
+        elif category == 'exit':
+            # Logic from play_exit_sound
+            p = sound_path("exit.mp3")
+            if os.path.exists(p):
+                path = p
+            else:
+                 p_dir = sound_path("exit")
+                 if os.path.exists(p_dir) and os.path.isdir(p_dir):
+                     files = [os.path.join(p_dir, f) for f in os.listdir(p_dir) if f.endswith(".mp3") or f.endswith(".wav")]
+                     if files:
+                         path = random.choice(files)
+        
+        # Fallback defaults
+        if not path:
+             if category == 'start': default_file = default_file or 'start.mp3'
+             elif category == 'end': default_file = default_file or 'end.mp3'
+             elif category == 'resume': default_file = default_file or 'resume.mp3'
+             elif category == 'ten': default_file = default_file or 'interval.mp3'
+             elif category == 'exit': default_file = default_file or 'exit.mp3'
         
         if not path and default_file:
             path = sound_path(default_file)
+            if not os.path.exists(path): path = None
             
-        if path and os.path.exists(path):
-            self.player.setSource(QtCore.QUrl.fromLocalFile(path))
-            self.player.play()
+        return path
+
+    def play_sequence(self, categories, on_finish=None):
+        """
+        Plays a sequence of sound categories or paths.
+        categories: list of strings (e.g. ['end', 'exit'])
+        on_finish: callback function to run after all sounds finish
+        """
+        self.sound_queue = []
+        self.sequence_finish_callback = on_finish
+        
+        resolved_paths = []
+        for cat in categories:
+            path = self.resolve_sound_path(cat)
+            if path:
+                resolved_paths.append(path)
+        
+        if not resolved_paths:
+            if on_finish:
+                on_finish()
+            return
+
+        # Start first one
+        first = resolved_paths.pop(0)
+        self.sound_queue = resolved_paths # Remaining
+        self.player.setSource(QtCore.QUrl.fromLocalFile(first))
+        self.player.play()
 
     def maybe_interval_voice(self):
         if not self.ten_voice_enabled: return
@@ -1034,8 +1089,16 @@ class PomodoroWidget(QtWidgets.QWidget):
         else:
             self.start_button.hide()
 
-    def on_playback_state_changed(self, state):
-        pass
+    def on_media_status_changed(self, status):
+        if status == QMediaPlayer.MediaStatus.EndOfMedia or status == QMediaPlayer.MediaStatus.InvalidMedia:
+            if self.sound_queue:
+                next_path = self.sound_queue.pop(0)
+                self.player.setSource(QtCore.QUrl.fromLocalFile(next_path))
+                self.player.play()
+            elif self.sequence_finish_callback:
+                cb = self.sequence_finish_callback
+                self.sequence_finish_callback = None
+                cb()
 
     def update_animation(self):
         if not self.animation_frames:
@@ -1120,12 +1183,12 @@ class PomodoroWidget(QtWidgets.QWidget):
             return
         if cmd.endswith("/surrender"):
             if self.phase == "working" and self.elapsed > 15 * 60:
-                 QtWidgets.QApplication.quit()
+                 self.play_sequence(['exit'], on_finish=QtWidgets.QApplication.quit)
             else:
                  # If not enough time passed or not working, maybe just quit or ignore?
                  # Requirement: Work Phase > 15m -> Quit App
                  if self.phase == "working" and self.elapsed > 15*60:
-                     QtWidgets.QApplication.quit()
+                     self.play_sequence(['exit'], on_finish=QtWidgets.QApplication.quit)
             self.cheat_buffer = ""
             return
         if "/bir" in cmd:
