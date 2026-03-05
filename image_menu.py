@@ -20,6 +20,7 @@ class ImageMenu(QtWidgets.QFrame):
         self.owner = owner
         self.ui_scale = 1.0
         self.ui_root = None
+        self._original_stylesheets = {} # Cache for Designer UI styles
         self.setWindowFlags(QtCore.Qt.Popup | QtCore.Qt.FramelessWindowHint | QtCore.Qt.WindowStaysOnTopHint)
         self.setWindowFlag(QtCore.Qt.NoDropShadowWindowHint, True)
         self.setAttribute(QtCore.Qt.WA_TranslucentBackground, True)
@@ -95,10 +96,23 @@ class ImageMenu(QtWidgets.QFrame):
             
             # [Fix] Sync size from Designer to runtime
             # Prevent the window from being squashed if user uses free layout (no constraints)
-            # We use the geometry from Designer as the authoritative size.
+            # We use the geometry from Designer as the authoritative size, scaled.
             designer_size = root_widget.geometry().size()
             if designer_size.width() > 10 and designer_size.height() > 10:
-                self.setFixedSize(designer_size)
+                scaled_size = QtCore.QSize(
+                    int(designer_size.width() * self.ui_scale),
+                    int(designer_size.height() * self.ui_scale)
+                )
+                self.setFixedSize(scaled_size)
+                # Also scale the inner widget to fill the host
+                root_widget.setFixedSize(scaled_size)
+                
+                # [Fix] Scale icon sizes for all buttons if scale is not 1.0
+                if abs(self.ui_scale - 1.0) > 0.01:
+                    for btn in root_widget.findChildren(QtWidgets.QPushButton):
+                        sz = btn.iconSize()
+                        if not sz.isEmpty():
+                            btn.setIconSize(sz * self.ui_scale)
             
             # Clear host background to avoid double backgrounds
             self.setStyleSheet(" #ContextMenuHost { background: transparent; border: none; } ")
@@ -120,12 +134,25 @@ class ImageMenu(QtWidgets.QFrame):
         self.btn_exit = find_btn("btn_exit") or QtWidgets.QPushButton("退出", self)
         self.btn_check_update = find_btn("btn_check_update") or QtWidgets.QPushButton("", self)
         self.btn_exit_voice = find_btn("btn_exit_voice") or QtWidgets.QPushButton("", self)
+        
+        # Store original stylesheets from Designer UI for state-based updates
+        if self.ui_root:
+            for b in (self.btn_pause, self.btn_top, self.btn_interval, self.btn_exit, self.btn_check_update, self.btn_exit_voice):
+                if b and b.objectName():
+                    self._original_stylesheets[b.objectName()] = b.styleSheet()
+
+        # Connect signals and ensure functional defaults
         for b in (self.btn_pause, self.btn_top, self.btn_interval, self.btn_exit, self.btn_check_update, self.btn_exit_voice):
             try:
-                b.setText("")
+                # Set buttons to flat mode to avoid system default hover backgrounds
                 b.setFlat(True)
+                # If not using Designer UI, apply default flattening and clear text
+                if not self.ui_root:
+                    b.setText("")
             except Exception:
                 pass
+        
+        # Initial icons (will be updated by refresh_controls for stateful buttons)
         self.setup_btn(self.btn_pause, "pause.png", "暂停")
         self.setup_btn(self.btn_exit, "exit.png", "退出")
         self.btn_pause.clicked.connect(lambda: (self.owner.pause_timer(), self.close()))
@@ -196,11 +223,13 @@ class ImageMenu(QtWidgets.QFrame):
         if path and os.path.exists(path):
             btn.setText("")
             btn.setIcon(QtGui.QIcon(path))
-            s = int(20 * self.ui_scale)
-            btn.setIconSize(QtCore.QSize(s, s))
-            bs = int(28 * self.ui_scale)
-            btn.setFixedSize(bs, bs)
-            btn.setStyleSheet("QPushButton { border: none; background: transparent; } QPushButton:hover { background: rgba(128, 128, 128, 0.2); border-radius: 4px; }")
+            # Only set default sizes if we are NOT using the Designer UI root
+            if not self.ui_root:
+                s = int(20 * self.ui_scale)
+                btn.setIconSize(QtCore.QSize(s, s))
+                bs = int(28 * self.ui_scale)
+                btn.setFixedSize(bs, bs)
+                btn.setStyleSheet("QPushButton { border: none; background: transparent; } QPushButton:hover { background: rgba(128, 128, 128, 0.2); border-radius: 4px; }")
             return True
         else:
             btn.setText(text)
@@ -217,19 +246,25 @@ class ImageMenu(QtWidgets.QFrame):
         s = int(18 * self.ui_scale)
         btn.setIconSize(QtCore.QSize(s, s))
         # Make it look like a menu item
-        pad = int(4 * self.ui_scale)
-        btn.setStyleSheet(f"""
-            QPushButton {{ 
-                border: none; 
-                background: transparent; 
-                text-align: left;
-                padding: {pad}px;
-            }} 
-            QPushButton:hover {{ 
-                background: rgba(128, 128, 128, 0.2); 
-                border-radius: 4px; 
-            }}
-        """)
+        if not self.ui_root:
+            pad = int(4 * self.ui_scale)
+            btn.setStyleSheet(f"""
+                QPushButton {{ 
+                    border: none; 
+                    background: transparent; 
+                    text-align: left;
+                    padding: {pad}px;
+                }} 
+                QPushButton:hover {{ 
+                    background: rgba(128, 128, 128, 0.2); 
+                    border-radius: 4px; 
+                }}
+            """)
+        else:
+            # For Designer UI, we can still ensure it behaves like a flat menu item
+            # But we should be careful not to override everything.
+            # We'll rely on setup_image_check_btn's stylesheet injection if called from there.
+            pass
 
     def setup_full_image_btn(self, btn, image_name, fallback_text):
         """
@@ -242,27 +277,32 @@ class ImageMenu(QtWidgets.QFrame):
             if not pix.isNull():
                 btn.setText("")
                 
-                # Scale if too large
-                max_height = int(24 * self.ui_scale)
-                if pix.height() > max_height:
-                    pix = pix.scaledToHeight(max_height, QtCore.Qt.SmoothTransformation)
-                    
-                btn.setIcon(QtGui.QIcon(pix))
-                btn.setIconSize(pix.size())
-                # Add a little padding or match image size exactly
-                pad = int(8 * self.ui_scale)
-                btn.setFixedSize(pix.width() + pad, pix.height() + pad)
-                btn.setStyleSheet("""
-                    QPushButton { 
-                        border: none; 
-                        background: transparent; 
-                        padding: 0px;
-                    } 
-                    QPushButton:hover { 
-                        background: rgba(128, 128, 128, 0.2); 
-                        border-radius: 4px; 
-                    }
-                """)
+                # Only scale and style if NOT using Designer UI root
+                if not self.ui_root:
+                    max_height = int(24 * self.ui_scale)
+                    if pix.height() > max_height:
+                        pix = pix.scaledToHeight(max_height, QtCore.Qt.SmoothTransformation)
+                        
+                    btn.setIcon(QtGui.QIcon(pix))
+                    btn.setIconSize(pix.size())
+                    # Add a little padding or match image size exactly
+                    pad = int(8 * self.ui_scale)
+                    btn.setFixedSize(pix.width() + pad, pix.height() + pad)
+                    btn.setStyleSheet("""
+                        QPushButton { 
+                            border: none; 
+                            background: transparent; 
+                            padding: 0px;
+                        } 
+                        QPushButton:hover { 
+                            background: rgba(128, 128, 128, 0.2); 
+                            border-radius: 4px; 
+                        }
+                    """)
+                else:
+                    # In Designer mode, just set the icon.
+                    # We assume the user has set an appropriate iconSize in Designer.
+                    btn.setIcon(QtGui.QIcon(pix))
                 return True
         
         # Fallback to text
@@ -270,22 +310,23 @@ class ImageMenu(QtWidgets.QFrame):
         btn.setIcon(QtGui.QIcon())
         
         # Remove fixed size constraint
-        btn.setMinimumSize(0, 0)
-        btn.setMaximumSize(16777215, 16777215)
-        
-        pad = int(4 * self.ui_scale)
-        btn.setStyleSheet(f"""
-            QPushButton {{ 
-                border: none; 
-                background: transparent; 
-                text-align: left;
-                padding: {pad}px;
-            }} 
-            QPushButton:hover {{ 
-                background: rgba(128, 128, 128, 0.2); 
-                border-radius: 4px; 
-            }}
-        """)
+        if not self.ui_root:
+            btn.setMinimumSize(0, 0)
+            btn.setMaximumSize(16777215, 16777215)
+            
+            pad = int(4 * self.ui_scale)
+            btn.setStyleSheet(f"""
+                QPushButton {{ 
+                    border: none; 
+                    background: transparent; 
+                    text-align: left;
+                    padding: {pad}px;
+                }} 
+                QPushButton:hover {{ 
+                    background: rgba(128, 128, 128, 0.2); 
+                    border-radius: 4px; 
+                }}
+            """)
         return False
 
 
@@ -300,53 +341,85 @@ class ImageMenu(QtWidgets.QFrame):
         has_check = check_path and os.path.exists(check_path)
         
         if not has_main:
-             # Fallback to standard text check btn
-             self.setup_check_btn(btn, fallback_text, is_checked, check_icon_name)
-             return
+            # Fallback to standard text check btn
+            self.setup_check_btn(btn, fallback_text, is_checked, check_icon_name)
+            return
 
         # We have the main image.
         pix_main = QtGui.QPixmap(main_path)
         
-        # Scale main image if too large
-        max_height = int(24 * self.ui_scale)
-        if pix_main.height() > max_height:
-             pix_main = pix_main.scaledToHeight(max_height, QtCore.Qt.SmoothTransformation)
+        # Scale main image if too large (only in manual mode)
+        if not self.ui_root:
+            max_height = int(24 * self.ui_scale)
+            if pix_main.height() > max_height:
+                pix_main = pix_main.scaledToHeight(max_height, QtCore.Qt.SmoothTransformation)
+            btn.setIconSize(pix_main.size())
         
         btn.setText("")
         btn.setIcon(QtGui.QIcon(pix_main))
-        btn.setIconSize(pix_main.size())
+        # btn.setIconSize() is intentionally skipped in Designer mode to respect the UI file's settings
         
-        # Calculate size
-        # We need space for the checkmark on the left.
-        check_width = int(20 * self.ui_scale)
-        padding = int(4 * self.ui_scale)
-        total_width = check_width + padding + pix_main.width() + padding
-        total_height = max(pix_main.height(), int(20 * self.ui_scale)) + padding * 2
-        
-        btn.setFixedSize(total_width, total_height)
-        
-        # Style
-        # If checked, show checkmark on left.
-        bg_style = ""
-        if is_checked and has_check:
-             # Escape path for CSS
-             c_path = check_path.replace('\\', '/')
-             # background: url(...) left center no-repeat;
-             bg_style = f"background-image: url({c_path}); background-position: left center; background-repeat: no-repeat;"
-        
-        btn.setStyleSheet(f"""
-            QPushButton {{ 
-                border: none; 
-                background-color: transparent; 
-                {bg_style}
-                padding-left: {check_width}px; /* Space for checkmark */
-                text-align: left;
-            }} 
-            QPushButton:hover {{ 
-                background-color: rgba(128, 128, 128, 0.2); 
-                border-radius: 4px; 
-            }}
-        """)
+        # Calculate size and set styles
+        if not self.ui_root:
+            # We need space for the checkmark on the left.
+            check_width = int(20 * self.ui_scale)
+            padding = int(4 * self.ui_scale)
+            total_width = check_width + padding + pix_main.width() + padding
+            total_height = max(pix_main.height(), int(20 * self.ui_scale)) + padding * 2
+            
+            btn.setFixedSize(total_width, total_height)
+            
+            # Style
+            # If checked, show checkmark on left.
+            bg_style = ""
+            if is_checked and has_check:
+                # Escape path for CSS
+                c_path = check_path.replace('\\', '/')
+                # background: url(...) left center no-repeat;
+                bg_style = f"background-image: url({c_path}); background-position: left center; background-repeat: no-repeat;"
+            
+            btn.setStyleSheet(f"""
+                QPushButton {{ 
+                    border: none; 
+                    background-color: transparent; 
+                    {bg_style}
+                    padding-left: {check_width}px; /* Space for checkmark */
+                    text-align: left;
+                }} 
+                QPushButton:hover {{ 
+                    background-color: rgba(128, 128, 128, 0.2); 
+                    border-radius: 4px; 
+                }}
+            """)
+        else:
+            # In Designer mode, we want to respect the existing layout/size
+            # But we still need to show the checkmark.
+            check_width = int(24 * self.ui_scale) # Standard check width
+            bg_style = ""
+            if is_checked and has_check:
+                c_path = check_path.replace('\\', '/')
+                bg_style = f"background-image: url({c_path}); background-position: left center; background-repeat: no-repeat; padding-left: {check_width}px;"
+            else:
+                bg_style = f"background-image: none; padding-left: {check_width}px;"
+            
+            # Instead of replacing the entire stylesheet, we try to just set the relevant properties
+            # We use the cached original stylesheet as the base to avoid accumulation.
+            existing = self._original_stylesheets.get(btn.objectName(), "")
+            if not existing:
+                btn.setStyleSheet(f"""
+                    QPushButton {{ 
+                        {bg_style}
+                        text-align: left;
+                        border: none;
+                        background-color: transparent;
+                    }} 
+                """)
+            else:
+                # Inject checkmark style into the base stylesheet
+                # Append to the end so it overrides previous rules (CSS cascade)
+                # Target by object name for specificity
+                obj_name = btn.objectName()
+                btn.setStyleSheet(existing + f"\nQPushButton#{obj_name} {{ {bg_style} }}")
 
 
     def show_at(self, global_pos):

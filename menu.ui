@@ -6,8 +6,8 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>357</width>
-    <height>272</height>
+    <width>399</width>
+    <height>258</height>
    </rect>
   </property>
   <property name="minimumSize">
@@ -20,131 +20,165 @@
    <string notr="true">#ContextMenu { border-image: url(:/menu/assets/menu/menu_bg.png); }
 QPushButton { border: none; background: transparent; }</string>
   </property>
-  <layout class="QGridLayout" name="gridLayout">
-   <item row="5" column="3">
-    <widget class="QPushButton" name="btn_check_update">
-     <property name="text">
-      <string/>
-     </property>
-     <property name="icon">
-      <iconset resource="menu.qrc">
-       <normaloff>:/menu/assets/menu/update.png</normaloff>:/menu/assets/menu/update.png</iconset>
-     </property>
-     <property name="iconSize">
-      <size>
-       <width>24</width>
-       <height>24</height>
-      </size>
-     </property>
-     <property name="flat">
-      <bool>true</bool>
-     </property>
-    </widget>
-   </item>
-   <item row="3" column="1">
-    <widget class="QPushButton" name="btn_interval">
-     <property name="text">
-      <string/>
-     </property>
-     <property name="icon">
-      <iconset resource="menu.qrc">
-       <normaloff>:/menu/assets/menu/interval_10.png</normaloff>:/menu/assets/menu/interval_10.png</iconset>
-     </property>
-     <property name="iconSize">
-      <size>
-       <width>24</width>
-       <height>24</height>
-      </size>
-     </property>
-     <property name="flat">
-      <bool>true</bool>
-     </property>
-    </widget>
-   </item>
-   <item row="3" column="3">
-    <widget class="QPushButton" name="btn_top">
-     <property name="text">
-      <string/>
-     </property>
-     <property name="icon">
-      <iconset resource="menu.qrc">
-       <normaloff>:/menu/assets/menu/pin.png</normaloff>:/menu/assets/menu/pin.png</iconset>
-     </property>
-     <property name="iconSize">
-      <size>
-       <width>24</width>
-       <height>24</height>
-      </size>
-     </property>
-     <property name="flat">
-      <bool>true</bool>
-     </property>
-    </widget>
-   </item>
-   <item row="0" column="3">
-    <widget class="QPushButton" name="btn_exit">
-     <property name="enabled">
-      <bool>true</bool>
-     </property>
-     <property name="text">
-      <string/>
-     </property>
-     <property name="icon">
-      <iconset resource="menu.qrc">
-       <normaloff>:/menu/assets/menu/exit.png</normaloff>:/menu/assets/menu/exit.png</iconset>
-     </property>
-     <property name="iconSize">
-      <size>
-       <width>24</width>
-       <height>24</height>
-      </size>
-     </property>
-     <property name="flat">
-      <bool>true</bool>
-     </property>
-    </widget>
-   </item>
-   <item row="5" column="1">
-    <widget class="QPushButton" name="btn_exit_voice">
-     <property name="text">
-      <string/>
-     </property>
-     <property name="icon">
-      <iconset resource="menu.qrc">
-       <normaloff>:/menu/assets/menu/exit_voice.png</normaloff>:/menu/assets/menu/exit_voice.png</iconset>
-     </property>
-     <property name="iconSize">
-      <size>
-       <width>24</width>
-       <height>24</height>
-      </size>
-     </property>
-     <property name="flat">
-      <bool>true</bool>
-     </property>
-    </widget>
-   </item>
-   <item row="0" column="1">
-    <widget class="QPushButton" name="btn_pause">
-     <property name="text">
-      <string/>
-     </property>
-     <property name="icon">
-      <iconset resource="menu.qrc">
-       <normaloff>:/menu/assets/menu/pause.png</normaloff>:/menu/assets/menu/pause.png</iconset>
-     </property>
-     <property name="iconSize">
-      <size>
-       <width>24</width>
-       <height>24</height>
-      </size>
-     </property>
-     <property name="flat">
-      <bool>true</bool>
-     </property>
-    </widget>
-   </item>
-  </layout>
+  <widget class="QPushButton" name="btn_interval">
+   <property name="geometry">
+    <rect>
+     <x>110</x>
+     <y>140</y>
+     <width>171</width>
+     <height>121</height>
+    </rect>
+   </property>
+   <property name="text">
+    <string/>
+   </property>
+   <property name="icon">
+    <iconset resource="menu.qrc">
+     <normaloff>:/menu/assets/menu/interval_10.png</normaloff>:/menu/assets/menu/interval_10.png</iconset>
+   </property>
+   <property name="iconSize">
+    <size>
+     <width>48</width>
+     <height>48</height>
+    </size>
+   </property>
+   <property name="flat">
+    <bool>true</bool>
+   </property>
+  </widget>
+  <widget class="QPushButton" name="btn_top">
+   <property name="geometry">
+    <rect>
+     <x>190</x>
+     <y>90</y>
+     <width>28</width>
+     <height>24</height>
+    </rect>
+   </property>
+   <property name="text">
+    <string/>
+   </property>
+   <property name="icon">
+    <iconset resource="menu.qrc">
+     <normaloff>:/menu/assets/menu/pin.png</normaloff>:/menu/assets/menu/pin.png</iconset>
+   </property>
+   <property name="iconSize">
+    <size>
+     <width>24</width>
+     <height>24</height>
+    </size>
+   </property>
+   <property name="flat">
+    <bool>true</bool>
+   </property>
+  </widget>
+  <widget class="QPushButton" name="btn_exit">
+   <property name="enabled">
+    <bool>true</bool>
+   </property>
+   <property name="geometry">
+    <rect>
+     <x>270</x>
+     <y>90</y>
+     <width>28</width>
+     <height>24</height>
+    </rect>
+   </property>
+   <property name="text">
+    <string/>
+   </property>
+   <property name="icon">
+    <iconset resource="menu.qrc">
+     <normaloff>:/menu/assets/menu/exit.png</normaloff>:/menu/assets/menu/exit.png</iconset>
+   </property>
+   <property name="iconSize">
+    <size>
+     <width>24</width>
+     <height>24</height>
+    </size>
+   </property>
+   <property name="flat">
+    <bool>true</bool>
+   </property>
+  </widget>
+  <widget class="QPushButton" name="btn_exit_voice">
+   <property name="geometry">
+    <rect>
+     <x>100</x>
+     <y>130</y>
+     <width>91</width>
+     <height>61</height>
+    </rect>
+   </property>
+   <property name="text">
+    <string/>
+   </property>
+   <property name="icon">
+    <iconset resource="menu.qrc">
+     <normaloff>:/menu/assets/menu/exit_voice.png</normaloff>:/menu/assets/menu/exit_voice.png</iconset>
+   </property>
+   <property name="iconSize">
+    <size>
+     <width>32</width>
+     <height>32</height>
+    </size>
+   </property>
+   <property name="flat">
+    <bool>true</bool>
+   </property>
+  </widget>
+  <widget class="QPushButton" name="btn_pause">
+   <property name="geometry">
+    <rect>
+     <x>100</x>
+     <y>90</y>
+     <width>28</width>
+     <height>24</height>
+    </rect>
+   </property>
+   <property name="text">
+    <string/>
+   </property>
+   <property name="icon">
+    <iconset resource="menu.qrc">
+     <normaloff>:/menu/assets/menu/pause.png</normaloff>:/menu/assets/menu/pause.png</iconset>
+   </property>
+   <property name="iconSize">
+    <size>
+     <width>24</width>
+     <height>24</height>
+    </size>
+   </property>
+   <property name="flat">
+    <bool>true</bool>
+   </property>
+  </widget>
+  <widget class="QPushButton" name="btn_check_update">
+   <property name="geometry">
+    <rect>
+     <x>200</x>
+     <y>110</y>
+     <width>111</width>
+     <height>101</height>
+    </rect>
+   </property>
+   <property name="text">
+    <string/>
+   </property>
+   <property name="icon">
+    <iconset resource="menu.qrc">
+     <normaloff>:/menu/assets/menu/update.png</normaloff>:/menu/assets/menu/update.png</iconset>
+   </property>
+   <property name="iconSize">
+    <size>
+     <width>48</width>
+     <height>48</height>
+    </size>
+   </property>
+   <property name="flat">
+    <bool>true</bool>
+   </property>
+  </widget>
  </widget>
  <resources>
   <include location="menu.qrc"/>

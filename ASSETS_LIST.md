@@ -12,9 +12,17 @@ This document lists all the resource files required for the official release. Pl
 | `paused.png` | 图片 | **暂停**状态静帧 | 400x400+ | 倒计时暂停时显示 |
 | `idle/` | **文件夹** | **工作**状态动画序列 | 400x400+ | 放入 `0.png`... (倒计时进行中播放) |
 | `paused/` | **文件夹** | **休息**状态动画序列 | 400x400+ | 放入 `0.png`... (休息时间进行中播放) |
-| `resume.png` | 图片 | **继续按钮** (暂停时显示) | 窗口短边的30% | 显示在右上角，用于暂停后恢复 |
+| `resume.png` | 图片 | **继续按钮** (暂停时显示) | 窗口短边的30% | 显示在正中央，用于暂停后恢复 |
 | `start_btn.png` | 图片 | **开始按钮** (右上角) | 窗口短边的37.5% | 自动缩放，建议原图200x200 |
 | `time_bg.png` | 图片 | **时间背景** | 建议 150x40+ | 显示在时间数字下方，**随字体大小缩放** |
+| `help.png` | 图片 | **首次启动帮助图** | 建议 800x600+ | `assets/help.png` 或 `help.jpg` |
+| `icon.png` | 图片 | **默认应用图标** | 256x256 | 用于托盘和窗口 |
+
+### 1.1 节日与季节专属图片 (Holiday & Season Specific Images)
+| 文件夹路径 (Path) | 类型 (Type) | 描述 (Description) | 备注 (Note) |
+| :--- | :--- | :--- | :--- |
+| `assets/holidays/{id}/icon.png` | 图片 | **节日专属图标** | 节日当天自动切换 |
+| `assets/seasons/{id}/icon.png` | 图片 | **季节专属图标** | 对应季节自动切换 |
 
 ## 2. 菜单图标 (Menu Icons) - 手绘风格
 **存放目录 / Directory:** `assets/menu/`
@@ -44,30 +52,37 @@ This document lists all the resource files required for the official release. Pl
 | `colon.png` | 冒号 (:) | 与数字高度匹配 | PNG透明背景 |
 | `infinite.png` | 无穷符号 (∞) | 与数字高度匹配 | PNG透明背景 (用于本轮结束自动退出时的休息时间显示) |
 
-## 4. 音效资源 (Sound Assets)
-**存放目录 / Directory:** `sounds/`
+## 4. 音频系统 (Audio System)
+音频资源可存放在本地 `sounds/` 目录或云端同步目录 `cloud/`。程序启动时会自动合并这两个目录的内容。
 
-所有音效文件都存放在 `sounds` 目录下对应的分类文件夹中。
+### 4.1 基础分类 (Basic Categories)
+**存放路径:** `sounds/{category}/` 或 `cloud/{category}/`
 
-### 基础结构
-你可以直接放入单个文件，或者创建文件夹放入多个文件（程序会随机播放）。
+| 分类文件夹 (Folder) | 描述 (Description) | 触发时机 (Trigger) |
+| :--- | :--- | :--- |
+| `start/` | 专注开始 | 点击开始按钮，开始工作计时 |
+| `end/` | 休息开始 | 工作计时结束，进入休息状态 |
+| `interval/` | 专注中途提醒 | 工作期间达到设定的间隔时间 (10/15/30min) |
+| `resume/` | 恢复工作 | 暂停后点击继续按钮，或休息结束进入新一轮工作 |
+| `exit/` | 退出程序 | 通过菜单或作弊码退出软件 |
 
-| 分类 (Category) | 文件夹路径 (Folder Path) | 备用单文件 (Legacy Single File) | 描述 (Description) |
-| :--- | :--- | :--- | :--- |
-| **开始工作** | `sounds/start/` | `sounds/start.mp3` | 开始工作提示音 |
-| **工作结束** | `sounds/end/` | `sounds/end.mp3` | 工作结束提示音 |
-| **定时提醒** | `sounds/interval/` | `sounds/interval.mp3` | 间隔提醒 (如每10分钟) |
-| **继续工作** | `sounds/resume/` | `sounds/resume.mp3` | 暂停后继续工作 |
-| **退出程序** | `sounds/exit/` | `sounds/exit.mp3` | 退出程序提示音 |
+### 4.2 节日与季节语音 (Holiday & Season Voices)
+**存放路径:** `sounds/holidays/` 或 `sounds/seasons/`
 
-*注：如果文件夹中有多个文件，每次触发时会随机播放其中一个。如果文件夹为空，会尝试寻找同名的 `.mp3` 单文件。*
+| 路径格式 (Path Pattern) | 描述 (Description) | 备注 (Note) |
+| :--- | :--- | :--- |
+| `holidays/{id}/greeting/` | **节日问候** | 节日当天**首次启动**时必播 |
+| `holidays/{id}/{category}/` | **节日专属事件** | 节日当天**首次触发**对应事件时必播 |
+| `seasons/{id}/{category}/` | **季节专属事件** | 对应季节内与基础语音等概率混合采样 |
 
-### 高级用法 (季节与标签)
-你可以在分类文件夹中创建子文件夹来实现季节或标签分类：
-
-- **季节/节日**: `sounds/start/winter/`
-- **标签**: `sounds/start/tags/miku/` (使用 `POMODORO_TAG=miku` 激活)
+### 4.3 播放逻辑 (Playback Logic)
+1. **采样池**: 对应分类下的所有文件组成一个采样池。
+2. **随机播放**: 若文件夹内有多个文件，随机抽取一个播放。
+3. **优先级**: 
+   - 节日当天：`greeting` 首次启动必播；各分类 `category` 当天首次触发必播。
+   - 之后：基础语音、节日语音、当前季节语音混合随机采样。
+4. **格式支持**: 推荐使用 `.mp3` 或 `.wav` 格式。
 
 ---
-### 云端资源 (Cloud Resources)
-如果启用了云端更新，请确保远程仓库 (`pomodoro-assets`) 保持相同的目录结构。
+### 云端资源说明 (Cloud Resources)
+`cloud/` 目录结构必须与 `sounds/` 完全一致。用户收到的分发包仅包含 `exe` 和 `sounds/`，应用首次运行后会自动生成 `cloud/` 目录。
