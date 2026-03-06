@@ -59,7 +59,7 @@ class TimerWidget(QtWidgets.QWidget):
         # Initial Resize
         self.update_layout()
 
-    def update_layout(self):
+    def update_layout(self, defer_resize=False):
         # Use float for smoother scaling if possible
         font = self.time_label.font()
         if hasattr(font, 'setPointSizeF'):
@@ -80,8 +80,9 @@ class TimerWidget(QtWidgets.QWidget):
         w = max(w, 50)
         h = max(h, 20)
         
-        if self.width() != w or self.height() != h:
-            self.resize(w, h)
+        if not defer_resize:
+            if self.width() != w or self.height() != h:
+                self.resize(w, h)
         
         self.time_label.setGeometry(0, 0, w, h)
         
@@ -94,7 +95,9 @@ class TimerWidget(QtWidgets.QWidget):
         # [Fix] Sync digits immediately with the new background size
         # This prevents the "independent scaling" look where background scales but digits wait for a tick.
         if self.digits_available():
-            self.show_digit_time(self.time_label.text())
+            self.show_digit_time(self.time_label.text(), w, h)
+            
+        return w, h
 
     def digits_available(self):
         # Cache this or check once
@@ -128,10 +131,10 @@ class TimerWidget(QtWidgets.QWidget):
             self.time_label.show()
             self.update_layout() 
 
-    def show_digit_time(self, text):
+    def show_digit_time(self, text, width=None, height=None):
         if not text: text = "00:00"
-        container_w = self.width()
-        container_h = self.height()
+        container_w = width if width is not None else self.width()
+        container_h = height if height is not None else self.height()
         
         if text == "INF":
             p = self.digit_path("infinite") 
@@ -190,7 +193,8 @@ class TimerWidget(QtWidgets.QWidget):
         
         # [CRITICAL] Use manual positioning to support TRUE overlap
         # Layouts don't reliably support negative spacing for transparent images.
-        spacing = int(final_height * -0.1) # Start with a tight default
+        spacing_ratio = -0.1 # -10% overlap
+        spacing = int(final_height * spacing_ratio)
         
         # Calculate total width with overlap
         total_w = 0
@@ -205,10 +209,10 @@ class TimerWidget(QtWidgets.QWidget):
         if total_w > container_w * 0.95:
             ratio = (container_w * 0.95) / total_w
             final_height = int(final_height * ratio)
-            spacing = int(final_height * -1.1)
+            spacing = int(final_height * spacing_ratio)
             # Re-scale pixmaps
             new_scaled = []
-            total_w = 0.5
+            total_w = 0
             for i, pm in enumerate(pixmaps):
                 if pm.isNull():
                     s_pm = QtGui.QPixmap()
@@ -351,8 +355,11 @@ class TimerWidget(QtWidgets.QWidget):
                 self.dragging = False
                 if self.main_window:
                     offset = self.pos() - self.main_window.pos()
-                    self.main_window.layout_config['timer_offset_x'] = offset.x()
-                    self.main_window.layout_config['timer_offset_y'] = offset.y()
+                    scale = float(getattr(self.main_window, "global_scale", 1.0))
+                    if scale <= 0:
+                        scale = 1.0
+                    self.main_window.layout_config['timer_offset_x'] = offset.x() / scale
+                    self.main_window.layout_config['timer_offset_y'] = offset.y() / scale
                     self.main_window.save_settings()
             
             if self.adjusting_duration:
@@ -369,15 +376,25 @@ class TimerWidget(QtWidgets.QWidget):
         # Ctrl + Wheel = Resize timer font (Time Card Only)
         if event.modifiers() & QtCore.Qt.ControlModifier:
             delta = event.angleDelta().y()
-            if delta > 0:
-                self.font_size = min(120, self.font_size + 2)
-            else:
-                self.font_size = max(8, self.font_size - 2)
-            
-            self.update_layout()
             if self.main_window:
-                self.main_window.layout_config['font_size'] = self.font_size
+                scale = float(getattr(self.main_window, "global_scale", 1.0))
+                if scale <= 0:
+                    scale = 1.0
+                base_font = float(self.main_window.layout_config.get('font_size', 22.0))
+                if delta > 0:
+                    base_font = min(120.0, base_font + 2.0)
+                else:
+                    base_font = max(8.0, base_font - 2.0)
+                self.main_window.layout_config['font_size'] = base_font
                 self.main_window.save_settings()
+                self.font_size = base_font * scale
+                self.update_layout()
+            else:
+                if delta > 0:
+                    self.font_size = min(120, self.font_size + 2)
+                else:
+                    self.font_size = max(8, self.font_size - 2)
+                self.update_layout()
             event.accept()
         else:
             # Pass other wheel events to main window (e.g. Shift + Wheel for global scaling)

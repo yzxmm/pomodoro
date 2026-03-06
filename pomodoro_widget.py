@@ -98,6 +98,9 @@ class PomodoroWidget(QtWidgets.QWidget):
         self.always_on_top = True
         self.work_duration = 40 * 60
         self.rest_duration = 15 * 60
+        
+        # [Fix] Anti-flicker flag
+        self.is_scaling = False
         self.check_updates_enabled = True
         self.exit_voice_enabled = True
         self.voice_interval_minutes = 10
@@ -169,11 +172,12 @@ class PomodoroWidget(QtWidgets.QWidget):
         self.timer_widget = TimerWidget(self)
         self.timer_widget.show()
         
-        # Layout config
+        # Layout config (base values, independent of global scale)
         self.layout_config = {
-            "timer_offset_x": 100,
-            "timer_offset_y": 100,
-            "font_size": 22
+            "timer_offset_x": 100.0,
+            "timer_offset_y": 100.0,
+            "font_size": 22.0,
+            "global_scale": 1.0
         }
         
         self.elapsed = 0
@@ -238,6 +242,7 @@ class PomodoroWidget(QtWidgets.QWidget):
         # self.update_sounds_async() # Moved to start_app
 
         self.load_settings()
+        self.global_scale = float(self.layout_config.get("global_scale", 1.0))
 
         self.dragging = False
         self.drag_offset = QtCore.QPoint()
@@ -414,7 +419,9 @@ class PomodoroWidget(QtWidgets.QWidget):
 
     def mouseReleaseEvent(self, event):
         if event.button() == QtCore.Qt.LeftButton:
-            self.dragging = False
+            if self.dragging:
+                 self.dragging = False
+                 self.save_settings() # Save only when drag ends
             event.accept()
         else:
             super().mouseReleaseEvent(event)
@@ -422,6 +429,10 @@ class PomodoroWidget(QtWidgets.QWidget):
     def wheelEvent(self, event):
         # Shift + Wheel = Global Scaling (Line 53)
         if event.modifiers() & QtCore.Qt.ShiftModifier:
+            # Requirements: Scaling starts -> Close Right Click Menu to avoid rebuild lag
+            if self.menu_overlay.isVisible():
+                self.menu_overlay.close()
+
             delta = event.angleDelta().y()
             # Smoother scaling step
             step = delta / 1200.0 
@@ -458,49 +469,47 @@ class PomodoroWidget(QtWidgets.QWidget):
             new_x = self.x() + mouse_local.x() * (1 - effective_factor)
             new_y = self.y() + mouse_local.y() * (1 - effective_factor)
             
-            # 2. Calculate New Scale for Sub-elements
-            # Use float for font size calculation internally
-            current_font = self.layout_config.get('font_size', 22.0)
-            new_font = current_font * effective_factor
-            new_font = max(8.0, min(200.0, new_font))
+            # 2. Update Global Scale (Integral Scaling)
+            self.global_scale *= effective_factor
+            self.layout_config['global_scale'] = self.global_scale
             
-            # 3. Update Timer Offset (Prevent drifting)
-            # Use float offsets in layout_config to avoid rounding accumulation
-            off_x = float(self.layout_config.get("timer_offset_x", 100.0))
-            off_y = float(self.layout_config.get("timer_offset_y", 100.0))
+            # [Optimization] Combined Geometry Update to reduce window system events (No Flickering)
+            # 4. Apply Changes to Main Window
             
-            new_off_x = off_x * effective_factor
-            new_off_y = off_y * effective_factor
-            
-            # 4. Update Layout Config BEFORE resize/move to ensure resizeEvent uses new values
-            self.layout_config['font_size'] = new_font
-            self.layout_config['timer_offset_x'] = new_off_x
-            self.layout_config['timer_offset_y'] = new_off_y
-            
-            # 5. Apply Changes to Main Window
-            self.resize(int(new_w), int(new_h))
-            self.move(int(new_x), int(new_y))
+            self.is_scaling = True # Lock to prevent conflict with resizeEvent
+            try:
+                self.setGeometry(int(new_x), int(new_y), int(new_w), int(new_h))
 
-            # 6. Apply Changes to Timer Widget
-            self.timer_widget.font_size = new_font # Pass float
-            self.timer_widget.update_layout()
-            
-            # Re-place timer (redundant but safe if resizeEvent didn't catch it perfectly)
-            self.place_time_label()
+                # 5. Apply Changes to Timer Widget (Synchronized)
+                # Combined move + resize inside place_time_label using the new defer flag
+                # [Optimization] Pass new position explicitly to avoid waiting for window system update
+                self.place_time_label(defer_timer_resize=True, main_pos=QtCore.QPoint(int(new_x), int(new_y)))
+            finally:
+                # [Fix] Extend lock duration slightly to cover async resize events from OS
+                QtCore.QTimer.singleShot(50, lambda: setattr(self, 'is_scaling', False))
 
-            # 7. Resize Image Menu
+            # 6. Resize Image Menu Scale factor (applied next time menu is opened)
             current_scale = getattr(self.menu_overlay, 'ui_scale', 1.0)
             new_scale = current_scale * effective_factor
             new_scale = max(0.5, min(5.0, new_scale))
             
             if abs(new_scale - current_scale) > 0.001:
-                self.menu_overlay.set_scale(new_scale)
+                # We don't call set_scale here because it rebuilds UI.
+                # Instead, just update the config. It will be applied when menu is shown.
+                self.menu_overlay.ui_scale = new_scale
                 self.layout_config['menu_scale'] = new_scale
             
-            self.save_settings()
+            # [Optimization] Debounce save_settings to avoid disk I/O lag during scaling
+            if not hasattr(self, '_save_settings_timer'):
+                self._save_settings_timer = QtCore.QTimer(self)
+                self._save_settings_timer.setSingleShot(True)
+                self._save_settings_timer.setInterval(1000) 
+                self._save_settings_timer.timeout.connect(self.save_settings)
+            self._save_settings_timer.start()
+
             event.accept()
         else:
-            # Pass to super (unlikely to do much for Frameless Window, but good practice)
+            # Pass other wheel events (e.g. no modifiers) to super or handle them
             super().wheelEvent(event)
 
     # --- Methods copied from main.py and adapted ---
@@ -744,6 +753,8 @@ class PomodoroWidget(QtWidgets.QWidget):
                     self.show_help_on_start = d.get("show_help_on_start", True)
             except:
                 pass
+        # Restore global scale from layout_config (fallback to 1.0)
+        self.global_scale = float(self.layout_config.get("global_scale", 1.0))
         self.setWindowFlag(QtCore.Qt.WindowStaysOnTopHint, self.always_on_top)
         # [Fix] Ensure TimerWidget also respects the initial stay-on-top setting
         if hasattr(self, 'timer_widget') and self.timer_widget:
@@ -756,7 +767,13 @@ class PomodoroWidget(QtWidgets.QWidget):
             "height": self.height(),
             "work_duration": self.work_duration,
             "rest_duration": self.rest_duration,
-            "layout_config": self.layout_config,
+            "layout_config": {
+                "timer_offset_x": float(self.layout_config.get("timer_offset_x", 100.0)),
+                "timer_offset_y": float(self.layout_config.get("timer_offset_y", 100.0)),
+                "font_size": float(self.layout_config.get("font_size", 22.0)),
+                "global_scale": float(getattr(self, "global_scale", 1.0)),
+                "menu_scale": float(self.layout_config.get("menu_scale", 1.0)) if "menu_scale" in self.layout_config else 1.0,
+            },
             "always_on_top": self.always_on_top,
             "birthday": self.birthday,
             "check_updates_enabled": self.check_updates_enabled,
@@ -808,17 +825,39 @@ class PomodoroWidget(QtWidgets.QWidget):
              # Play holiday greeting
              pass # Placeholder
 
-    def place_time_label(self):
+    def place_time_label(self, defer_timer_resize=False, main_pos=None):
         cfg = getattr(self, 'layout_config', {})
-        f_size = cfg.get("font_size", 22)
-        if self.timer_widget.font_size != f_size:
-            self.timer_widget.font_size = f_size
-            self.timer_widget.update_layout()
-            
-        off_x = cfg.get("timer_offset_x", 100.0)
-        off_y = cfg.get("timer_offset_y", 100.0)
+        base_font_size = float(cfg.get("font_size", 22.0))
+        scale = float(getattr(self, "global_scale", 1.0))
+        effective_font_size = base_font_size * scale
         
-        self.timer_widget.move(int(self.x() + off_x), int(self.y() + off_y))
+        # Determine target size (timer widget size is derived from effective font size)
+        tw, th = self.timer_widget.width(), self.timer_widget.height()
+        
+        # Always update layout if font size changed OR if we are in a batch update (defer_timer_resize)
+        if self.timer_widget.font_size != effective_font_size or defer_timer_resize:
+            self.timer_widget.font_size = effective_font_size
+            # Get target width/height from the widget based on new font size
+            tw, th = self.timer_widget.update_layout(defer_resize=defer_timer_resize)
+            
+        base_off_x = float(cfg.get("timer_offset_x", 100.0))
+        base_off_y = float(cfg.get("timer_offset_y", 100.0))
+        off_x = base_off_x * scale
+        off_y = base_off_y * scale
+        
+        if main_pos:
+            mx, my = main_pos.x(), main_pos.y()
+        else:
+            mx, my = self.x(), self.y()
+            
+        target_x = int(mx + off_x)
+        target_y = int(my + off_y)
+        
+        if defer_timer_resize:
+            # Combined geometry update (No flicker)
+            self.timer_widget.setGeometry(target_x, target_y, tw, th)
+        else:
+            self.timer_widget.move(target_x, target_y)
 
     def place_resume_button(self):
         w = self.width()
@@ -853,10 +892,13 @@ class PomodoroWidget(QtWidgets.QWidget):
         self.start_button.setGeometry(rx, ry, self.start_button.width(), self.start_button.height())
 
     def resizeEvent(self, event):
-        self.place_time_label()
+        # [Fix] Skip TimerWidget update during scaling to prevent flicker/conflict
+        if not getattr(self, 'is_scaling', False):
+            self.place_time_label()
+            
         self.place_resume_button()
         self.place_start_button()
-        self.update() # Trigger repaint
+        # self.update() is already called automatically by the window system after a resizeEvent
         super().resizeEvent(event)
 
     def paintEvent(self, event):

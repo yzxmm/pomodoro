@@ -82,16 +82,14 @@ def main():
     # 2. calendar_config.json is bundled, NO COPY to dist.
     # Users should not see/edit it.
 
-    # 3. Create a README (Optional but helpful)
-    readme_path = os.path.join(dist_dir, "使用说明.txt")
-    with open(readme_path, "w", encoding="utf-8") as f:
-        f.write("pmpmchan 分发包\n")
-        f.write("=================\n\n")
-        f.write("1. pmpmchan.exe: 主程序，双击运行。\n")
-        f.write("2. sounds/ 文件夹: 存放语音文件，可自由替换。\n")
-        f.write("3. 首次运行会自动下载 cloud 资源（如果有网络）。\n")
-        f.write("4. 节日配置已内置，无需修改。\n")
-    print(f"    Created 使用说明.txt")
+    # 3. Copy the readme.txt
+    src_readme = os.path.join(project_root, "readme.txt")
+    dst_readme = os.path.join(dist_dir, "readme.txt")
+    if os.path.exists(src_readme):
+        shutil.copy2(src_readme, dst_readme)
+        print(f"    Copied readme.txt")
+    else:
+        print("    WARNING: 'readme.txt' not found in project root.")
 
     print("\n>>> All Done! Distribution package is in 'dist/' folder.")
 

@@ -104,9 +104,9 @@ QPushButton { border: none; background: transparent; }</string>
   <widget class="QPushButton" name="btn_exit_voice">
    <property name="geometry">
     <rect>
-     <x>100</x>
+     <x>70</x>
      <y>130</y>
-     <width>91</width>
+     <width>101</width>
      <height>61</height>
     </rect>
    </property>
