@@ -28,17 +28,22 @@ class ImageMenu(QtWidgets.QFrame):
         self.setFocusPolicy(QtCore.Qt.StrongFocus)
         self.setObjectName("ContextMenuHost")
         
+        self.bg_pixmap = QtGui.QPixmap()
+        self.bg_aspect_ratio = 1.0
+
         # Apply background only when not using Designer UI
         if not self.try_load_designer_ui():
             menu_bg = resolve_menu_icon("menu_bg.png")
             if menu_bg and os.path.exists(menu_bg):
-                 bg_path = menu_bg.replace('\\', '/')
-                 self.setStyleSheet(f"""
-                    #ContextMenuHost {{
-                        border-image: url({bg_path}) 0 0 0 0 stretch stretch;
+                 self.bg_pixmap = QtGui.QPixmap(menu_bg)
+                 if not self.bg_pixmap.isNull():
+                     self.bg_aspect_ratio = self.bg_pixmap.width() / max(1, self.bg_pixmap.height())
+                 
+                 self.setStyleSheet("""
+                    #ContextMenuHost {
+                        background: transparent;
                         border: none;
-                        border-radius: 8px;
-                    }}
+                    }
                 """)
             else:
                 self.setStyleSheet("""
@@ -52,6 +57,10 @@ class ImageMenu(QtWidgets.QFrame):
         self.setMinimumWidth(int(250 * self.ui_scale))
 
     def set_scale(self, scale):
+        # [Performance] Debounce menu scaling. Rebuilding UI is expensive.
+        if abs(self.ui_scale - scale) < 0.05:
+            return
+            
         self.ui_scale = scale
         if self.ui_root:
             self.refresh_controls()
@@ -62,10 +71,18 @@ class ImageMenu(QtWidgets.QFrame):
             self.adjustSize()
 
     def paintEvent(self, event):
-        opt = QtWidgets.QStyleOption()
-        opt.initFrom(self)
-        p = QtGui.QPainter(self)
-        self.style().drawPrimitive(QtWidgets.QStyle.PE_Widget, opt, p, self)
+        painter = QtGui.QPainter(self)
+        painter.setRenderHint(QtGui.QPainter.Antialiasing)
+        
+        if not self.bg_pixmap.isNull():
+            # [CRITICAL FIX] Draw background maintaining aspect ratio exactly
+            # We use SmoothTransformation for the highest quality.
+            target_rect = self.rect()
+            painter.drawPixmap(target_rect, self.bg_pixmap)
+        else:
+            opt = QtWidgets.QStyleOption()
+            opt.initFrom(self)
+            self.style().drawPrimitive(QtWidgets.QStyle.PE_Widget, opt, painter, self)
 
     def keyPressEvent(self, event):
         # Forward key events to owner (PomodoroWidget) for cheat codes
@@ -426,6 +443,27 @@ class ImageMenu(QtWidgets.QFrame):
         try:
             self.refresh_controls()
             self.adjustSize()
+            
+            # [CRITICAL FIX] Ensure window matches background aspect ratio perfectly
+            # This prevents any stretching of the menu_bg.png asset.
+            if not self.bg_pixmap.isNull():
+                # Get the size required by the layout
+                req_w = self.width()
+                req_h = self.height()
+                
+                # Calculate new size that maintains aspect ratio and covers the required area
+                # We use the provided asset's own ratio as the master.
+                if req_w / max(1, req_h) > self.bg_aspect_ratio:
+                    # Content is wider than the background's natural shape -> Expand height
+                    final_w = req_w
+                    final_h = int(req_w / self.bg_aspect_ratio)
+                else:
+                    # Content is taller than the background's natural shape -> Expand width
+                    final_h = req_h
+                    final_w = int(req_h * self.bg_aspect_ratio)
+                
+                self.setFixedSize(final_w, final_h)
+            
             self.move(global_pos - QtCore.QPoint(self.width() // 2, self.height() // 2))
             self.show()
             self.raise_()

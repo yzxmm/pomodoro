@@ -13,14 +13,7 @@ from download_manager import DownloadManager
 # Set this to False to disable layout editing features (drag/resize time label)
 LAYOUT_EDIT_MODE = True
 
-class ClickableLabel(QtWidgets.QLabel):
-    clicked = QtCore.Signal()
-    def mousePressEvent(self, event):
-        if event.button() == QtCore.Qt.LeftButton:
-            self.clicked.emit()
-            event.accept()
-        else:
-            super().mousePressEvent(event)
+
 
 class HelpImageWindow(QtWidgets.QWidget):
     def __init__(self, pixmap, parent=None):
@@ -95,21 +88,27 @@ class PomodoroWidget(QtWidgets.QWidget):
         self.setWindowTitle("pmpmchan")
         # QtWidgets.QApplication.setAttribute(QtCore.Qt.AA_EnableHighDpiScaling) # Deprecated in Qt6
         self.setWindowFlags(QtCore.Qt.FramelessWindowHint | QtCore.Qt.Window)
+        self.setObjectName("PomodoroWidget") # Set a unique name for styling
         self.setAttribute(QtCore.Qt.WA_TranslucentBackground, True)
+        # Apply hitbox only to the main widget, not children, using an ID selector
+        self.setStyleSheet("#PomodoroWidget { background-color: rgba(0, 0, 0, 1); }")
         self.setWindowFlag(QtCore.Qt.WindowStaysOnTopHint, True)
         self.setFocusPolicy(QtCore.Qt.StrongFocus)
 
-        self.image_label = QtWidgets.QLabel(self)
-        self.image_label.setAlignment(QtCore.Qt.AlignCenter)
-        self.image_label.setScaledContents(True)
-        # self.image_label.setAttribute(QtCore.Qt.WA_TransparentForMouseEvents, True) # Removed to allow right-click menu and drag
+        self.always_on_top = True
+        self.work_duration = 40 * 60
+        self.rest_duration = 15 * 60
+        self.check_updates_enabled = True
+        self.exit_voice_enabled = True
+        self.voice_interval_minutes = 10
+        self.show_help_on_start = True
+        self.birthday = "9999"
 
-        pix = QtGui.QPixmap(resolve_asset("idle.png"))
-        if pix.isNull():
+        self.current_pixmap = QtGui.QPixmap(resolve_asset("idle.png"))
+        if self.current_pixmap.isNull():
             # Fallback if image fails to load
-            self.image_label.setStyleSheet("background-color: rgba(0, 0, 0, 100); color: white; border: 2px dashed white;")
-            self.image_label.setText("Image Missing")
-        
+            self.setStyleSheet("background-color: rgba(0, 0, 0, 100); color: white; border: 2px dashed white;")
+
         # System Tray Icon
         self.tray_icon = QtWidgets.QSystemTrayIcon(self)
         icon_path = resolve_asset("icon.png")
@@ -163,11 +162,8 @@ class PomodoroWidget(QtWidgets.QWidget):
                 
                 init_w, init_h = target_w, target_h
         
-        if not pix.isNull():
-            self.image_label.setPixmap(pix)
-        
-        self.resize(init_w, init_h)
-        self.image_label.setGeometry(0, 0, self.width(), self.height())
+        if not self.current_pixmap.isNull():
+            self.resize(init_w, init_h)
         
         # Initialize TimerWidget
         self.timer_widget = TimerWidget(self)
@@ -180,12 +176,9 @@ class PomodoroWidget(QtWidgets.QWidget):
             "font_size": 22
         }
         
-        self.work_duration = 40 * 60
-        self.rest_duration = 15 * 60
         self.elapsed = 0
         self.phase = "idle"
         self.paused = False
-        self.always_on_top = True
         self.adjusting_duration = False
         self.adjust_mode = None  # 'work' or 'rest'
         self.edit_mode = 'work'
@@ -194,10 +187,7 @@ class PomodoroWidget(QtWidgets.QWidget):
         self.duration_start = self.work_duration
         self.exit_on_work_end = False
         self.is_flipped = False
-        self.check_updates_enabled = True
-        self.exit_voice_enabled = True
         self.closing = False
-        self.show_help_on_start = True
         self.help_window = None
 
         self.animation_config = {}
@@ -235,7 +225,6 @@ class PomodoroWidget(QtWidgets.QWidget):
         self.tag_pools = {'start': {}, 'end': {}, 'ten': {}, 'resume': {}}
         self.holiday_pools = {}
         self.ten_voice_enabled = self.env_flag_enabled('POMODORO_TEN_ENABLE', default=True)
-        self.voice_interval_minutes = 10
         
         # Cheat Code Buffer
         self.cheat_buffer = ""
@@ -243,8 +232,6 @@ class PomodoroWidget(QtWidgets.QWidget):
         self.cheat_timer.setInterval(5000) # Reset buffer after 5 seconds of inactivity
         self.cheat_timer.setSingleShot(True)
         self.cheat_timer.timeout.connect(self.reset_cheat_buffer)
-        
-        self.birthday = "9999" # Default invalid birthday
 
         self.load_calendar_config()
         self.build_sound_pool()
@@ -263,22 +250,20 @@ class PomodoroWidget(QtWidgets.QWidget):
         if 'menu_scale' in self.layout_config:
             self.menu_overlay.set_scale(self.layout_config['menu_scale'])
 
-        self.resume_button = ClickableLabel(self)
-        self.resume_button.setFixedSize(200, 200)
-        self.resume_button.setAlignment(QtCore.Qt.AlignCenter)
-        self.resume_button.setScaledContents(True)
+        self.resume_button = QtWidgets.QPushButton(self)
+        self.resume_button.setCursor(QtCore.Qt.PointingHandCursor)
+        self.resume_button.setStyleSheet("border: none; background: transparent;")
         rpix = QtGui.QPixmap(resolve_asset("resume.png"))
         if not rpix.isNull():
-            self.resume_button.setPixmap(rpix)
+            self.resume_button.setIcon(QtGui.QIcon(rpix))
         else:
+            # Fallback text if image is missing
             self.resume_button.setText("继续")
-            self.resume_button.setStyleSheet("background: rgba(0,0,0,0.3); color: white; padding:6px; border-radius:6px; font-size: 24px;")
+            self.resume_button.setStyleSheet("background: rgba(0,0,0,0.5); color: white; border-radius:10px;")
         self.resume_button.clicked.connect(self.start_or_resume)
         self.resume_button.hide()
-        
-        # Ensure image label fills the window initially
-        self.image_label.setGeometry(0, 0, self.width(), self.height())
-        self.image_label.lower()
+
+
 
         self.start_button = QtWidgets.QPushButton("开始", self)
         s_icon = resolve_asset("start_btn.png")
@@ -294,7 +279,6 @@ class PomodoroWidget(QtWidgets.QWidget):
         self.start_button.show()
         
         # Ensure correct stacking order
-        self.image_label.lower()
         self.timer_widget.raise_()
         self.start_button.raise_()
 
@@ -311,7 +295,6 @@ class PomodoroWidget(QtWidgets.QWidget):
                  new_w = int(self.width() * 0.6)
                  new_h = int(self.height() * 0.6)
                  self.resize(new_w, new_h)
-                 self.image_label.setGeometry(0, 0, new_w, new_h)
         
         self.update_app_icon()
         
@@ -444,65 +427,73 @@ class PomodoroWidget(QtWidgets.QWidget):
             step = delta / 1200.0 
             factor = 1.0 + step
             
+            # Record mouse global position before scaling for anchored zoom
+            mouse_global = event.globalPosition().toPoint()
+            # Position relative to top-left
+            mouse_local = mouse_global - self.pos()
+            
             # 1. Calculate new Main Window Size
             current_w = self.width()
             current_h = self.height()
             
             # Use image aspect ratio if available for stability
-            if not self.image_label.pixmap().isNull():
-                 pm = self.image_label.pixmap()
+            if not self.current_pixmap.isNull():
+                 pm = self.current_pixmap
                  aspect = pm.width() / max(1, pm.height())
             else:
                  aspect = current_w / max(1, current_h)
 
-            new_h = int(current_h * factor)
+            new_h = current_h * factor
             new_h = max(200, min(1200, new_h)) # Limit height
-            new_w = int(new_h * aspect)
+            new_w = new_h * aspect
             
             # Calculate actual effective factor to sync other elements
-            # (Because of integer rounding and clamping, exact factor might differ)
             effective_factor = new_h / max(1, current_h)
             
-            if abs(effective_factor - 1.0) < 0.001:
+            if abs(effective_factor - 1.0) < 0.0001:
                 return # No change
             
-            self.resize(new_w, new_h)
-
-            # 2. Resize Timer Widget (propagate scale)
-            current_font = self.timer_widget.font_size
-            new_font = int(current_font * effective_factor)
+            # Adjust window position so the point under the mouse stays fixed
+            # new_pos = old_pos + mouse_local * (1 - effective_factor)
+            new_x = self.x() + mouse_local.x() * (1 - effective_factor)
+            new_y = self.y() + mouse_local.y() * (1 - effective_factor)
             
-            # Ensure at least 1px change if scaling up/down significantly to avoid stuck
-            if new_font == current_font and effective_factor != 1.0:
-                 if effective_factor > 1: new_font += 1
-                 else: new_font -= 1
-            new_font = max(8, min(200, new_font))
+            # 2. Calculate New Scale for Sub-elements
+            # Use float for font size calculation internally
+            current_font = self.layout_config.get('font_size', 22.0)
+            new_font = current_font * effective_factor
+            new_font = max(8.0, min(200.0, new_font))
             
-            if new_font != current_font:
-                self.timer_widget.font_size = new_font
-                self.timer_widget.update_layout()
-                self.layout_config['font_size'] = new_font
-                
             # 3. Update Timer Offset (Prevent drifting)
-            # We must scale the offset so the timer stays relative to the character features
-            off_x = self.layout_config.get("timer_offset_x", 100)
-            off_y = self.layout_config.get("timer_offset_y", 100)
+            # Use float offsets in layout_config to avoid rounding accumulation
+            off_x = float(self.layout_config.get("timer_offset_x", 100.0))
+            off_y = float(self.layout_config.get("timer_offset_y", 100.0))
             
-            new_off_x = int(off_x * effective_factor)
-            new_off_y = int(off_y * effective_factor)
+            new_off_x = off_x * effective_factor
+            new_off_y = off_y * effective_factor
             
+            # 4. Update Layout Config BEFORE resize/move to ensure resizeEvent uses new values
+            self.layout_config['font_size'] = new_font
             self.layout_config['timer_offset_x'] = new_off_x
             self.layout_config['timer_offset_y'] = new_off_y
             
-            # Re-place timer immediately with new offsets
+            # 5. Apply Changes to Main Window
+            self.resize(int(new_w), int(new_h))
+            self.move(int(new_x), int(new_y))
+
+            # 6. Apply Changes to Timer Widget
+            self.timer_widget.font_size = new_font # Pass float
+            self.timer_widget.update_layout()
+            
+            # Re-place timer (redundant but safe if resizeEvent didn't catch it perfectly)
             self.place_time_label()
 
-            # 4. Resize Image Menu
+            # 7. Resize Image Menu
             current_scale = getattr(self.menu_overlay, 'ui_scale', 1.0)
             new_scale = current_scale * effective_factor
             new_scale = max(0.5, min(5.0, new_scale))
             
-            if abs(new_scale - current_scale) > 0.01:
+            if abs(new_scale - current_scale) > 0.001:
                 self.menu_overlay.set_scale(new_scale)
                 self.layout_config['menu_scale'] = new_scale
             
@@ -754,6 +745,10 @@ class PomodoroWidget(QtWidgets.QWidget):
             except:
                 pass
         self.setWindowFlag(QtCore.Qt.WindowStaysOnTopHint, self.always_on_top)
+        # [Fix] Ensure TimerWidget also respects the initial stay-on-top setting
+        if hasattr(self, 'timer_widget') and self.timer_widget:
+            self.timer_widget.setWindowFlag(QtCore.Qt.WindowStaysOnTopHint, self.always_on_top)
+            self.timer_widget.show() # CRITICAL: Re-show after changing flags, as it can cause a hide.
 
     def save_settings(self):
         d = {
@@ -820,10 +815,10 @@ class PomodoroWidget(QtWidgets.QWidget):
             self.timer_widget.font_size = f_size
             self.timer_widget.update_layout()
             
-        off_x = cfg.get("timer_offset_x", 100)
-        off_y = cfg.get("timer_offset_y", 100)
+        off_x = cfg.get("timer_offset_x", 100.0)
+        off_y = cfg.get("timer_offset_y", 100.0)
         
-        self.timer_widget.move(self.x() + off_x, self.y() + off_y)
+        self.timer_widget.move(int(self.x() + off_x), int(self.y() + off_y))
 
     def place_resume_button(self):
         w = self.width()
@@ -832,10 +827,17 @@ class PomodoroWidget(QtWidgets.QWidget):
         btn_size = int(min_dim * 0.30)
         btn_size = max(60, min(160, btn_size))
         self.resume_button.setFixedSize(btn_size, btn_size)
-        rx = max(0, int((w - self.resume_button.width()) / 2))
+        self.resume_button.setIconSize(QtCore.QSize(btn_size, btn_size))
+        
+        # Move to middle-left as requested ("把暂停按钮挪到画面中左")
+        margin_left = int(w * 0.05) 
+        rx = margin_left
         ry = max(0, int((h - self.resume_button.height()) / 2))
+        
         self.resume_button.setGeometry(rx, ry, self.resume_button.width(), self.resume_button.height())
         self.resume_button.raise_()
+
+
 
     def place_start_button(self):
         w = self.width()
@@ -851,11 +853,44 @@ class PomodoroWidget(QtWidgets.QWidget):
         self.start_button.setGeometry(rx, ry, self.start_button.width(), self.start_button.height())
 
     def resizeEvent(self, event):
-        self.image_label.setGeometry(0, 0, self.width(), self.height())
         self.place_time_label()
         self.place_resume_button()
         self.place_start_button()
+        self.update() # Trigger repaint
         super().resizeEvent(event)
+
+    def paintEvent(self, event):
+        painter = QtGui.QPainter(self)
+        painter.setRenderHint(QtGui.QPainter.Antialiasing)
+        
+        # [CRITICAL FIX] Fill the background with a nearly-invisible color (alpha=1)
+        # This ensures the entire rectangular area of the widget captures mouse events,
+        # solving the issue where only the character lines were clickable.
+        painter.fillRect(self.rect(), QtGui.QColor(0, 0, 0, 1))
+        
+        # Draw the current character image
+        if not self.current_pixmap.isNull():
+            # Scale pixmap to fit current window size, maintaining aspect ratio
+            scaled_pixmap = self.current_pixmap.scaled(
+                self.size(),
+                QtCore.Qt.KeepAspectRatio,
+                QtCore.Qt.SmoothTransformation
+            )
+            # Center the scaled pixmap
+            x = (self.width() - scaled_pixmap.width()) // 2
+            y = (self.height() - scaled_pixmap.height()) // 2
+            painter.drawPixmap(x, y, scaled_pixmap)
+        
+        super().paintEvent(event)
+
+    def set_pixmap(self, pixmap):
+        if not pixmap.isNull():
+            self.current_pixmap = pixmap
+            self.update() # Trigger repaint
+
+    def set_character_image(self, image_path):
+        new_pixmap = QtGui.QPixmap(image_path)
+        self.set_pixmap(new_pixmap)
 
     def closeEvent(self, event):
         if self.exit_voice_enabled and not self.closing:
@@ -1063,9 +1098,9 @@ class PomodoroWidget(QtWidgets.QWidget):
                 if not pm.isNull():
                     if self.is_flipped:
                         t = QtGui.QTransform()
-                        t.scale(1, -1)
+                        t.scale(-1, 1) # Standard horizontal flip
                         pm = pm.transformed(t)
-                    self.image_label.setPixmap(pm)
+                    self.set_pixmap(pm)
             self.resume_button.show()
         else:
             self.resume_button.hide()
@@ -1081,9 +1116,9 @@ class PomodoroWidget(QtWidgets.QWidget):
                     if not pm.isNull():
                         if self.is_flipped:
                             t = QtGui.QTransform()
-                            t.scale(1, -1)
+                            t.scale(-1, 1)
                             pm = pm.transformed(t)
-                        self.image_label.setPixmap(pm)
+                        self.set_pixmap(pm)
         if self.phase == "idle":
             self.start_button.show()
         else:
@@ -1107,9 +1142,9 @@ class PomodoroWidget(QtWidgets.QWidget):
         pm = self.animation_frames[self.current_frame_index]
         if self.is_flipped and not pm.isNull():
             t = QtGui.QTransform()
-            t.scale(1, -1)
+            t.scale(-1, 1) # Standard horizontal flip
             pm = pm.transformed(t)
-        self.image_label.setPixmap(pm)
+        self.set_pixmap(pm)
 
     def set_animation(self, anim_type):
         frames = []
@@ -1135,9 +1170,9 @@ class PomodoroWidget(QtWidgets.QWidget):
                 if not pm.isNull():
                     if self.is_flipped:
                         t = QtGui.QTransform()
-                        t.scale(1, -1)
+                        t.scale(-1, 1) # Standard horizontal flip
                         pm = pm.transformed(t)
-                    self.image_label.setPixmap(pm)
+                    self.set_pixmap(pm)
             self.animation_frames = []
             self.current_frame_index = 0
             self.current_anim_type = anim_type
@@ -1163,7 +1198,7 @@ class PomodoroWidget(QtWidgets.QWidget):
             t = QtGui.QTransform()
             t.scale(-1, 1)
             pm = pm.transformed(t)
-        self.image_label.setPixmap(pm)
+        self.set_pixmap(pm)
         self.animation_timer.start()
 
     def reset_cheat_buffer(self):
@@ -1266,6 +1301,10 @@ class PomodoroWidget(QtWidgets.QWidget):
     def toggle_always_on_top(self):
         self.always_on_top = not self.always_on_top
         self.setWindowFlag(QtCore.Qt.WindowStaysOnTopHint, self.always_on_top)
+        # [Fix] Sync TimerWidget's on-top status with the main window
+        if self.timer_widget:
+            self.timer_widget.setWindowFlag(QtCore.Qt.WindowStaysOnTopHint, self.always_on_top)
+            self.timer_widget.show() # Re-show to apply flag change
         self.show()
         self.save_settings()
 
